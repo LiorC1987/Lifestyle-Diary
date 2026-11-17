@@ -3,6 +3,8 @@
 The same diary as the Android app, built as a web page that works on any phone, including iPhones. It can be added to the home screen so it opens like an app and works without a connection.
 
 - The diary is stored **on the phone**, in the browser's own database.
+- Weights can be shown and entered in **kilograms or pounds** (Trackers > Weight unit). They are always stored in kilograms, so switching never changes them.
+- Activities are picked from a list of common ones, or typed under **Other…**; durations from 15 min, 30 min, 1 h, 1 h 30 min and 2 h, or typed (45, 1:15, 1h 20).
 - A meal can have a **photo**, taken with the camera or picked from the gallery, with or without text. Photos are shrunk to about 1280 pixels (typically 100 to 300 KB each) before they are stored.
 - Optionally, each person can link **their own Google Drive**, and the app keeps a copy of the diary and its photos there.
 - The web host only serves the app's files. No diary data is ever sent to it.
@@ -69,6 +71,7 @@ That is fine for trying it out. To remove the weekly approval, press **Publish a
 
 On the Summary tab, choose day, week or month, then **Share report** (or **Copy report**). The report is a Markdown file with instructions for Claude, the figures the app calculated, and the period's entries. Send it to the Claude app and Claude replies with what stood out and what is worth trying.
 
+- The report also asks Claude to spot sweets in your meals (from the text, and the photos when they are included) and to compare your mood on days with and without them, and on the day after. Claude names the sweets it counted, so you can correct it. Log snacks and desserts as meals, with a word or a photo, for this to work.
 - A **day** report is shared together with that day's meal photos, so Claude can see the meals. Week and month reports carry text only and note which meals have a photo.
 - Phones differ in what their share sheet accepts. The app tries, in order: Markdown file with photos, plain-text file with photos, photos with the report as message text, then the same without photos, and says so if the photos had to be left out.
 - On a computer, or wherever the browser cannot share files, the report and the day's photos are downloaded as separate files. Attach all of them in Claude.

@@ -124,8 +124,9 @@ button.card{display:block;width:100%;text-align:left}
 .sheet h2{font-size:20px;font-weight:600}
 .sheet-actions{display:flex;justify-content:flex-end;gap:4px;flex-wrap:wrap}
 .field{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
-.field input,.field textarea{width:100%;min-height:48px;padding:12px;border:1px solid var(--field);border-radius:10px;background:#fff;font-size:16px;font-weight:400;color:var(--ink)}
+.field input,.field textarea,.field select{width:100%;min-height:48px;padding:12px;border:1px solid var(--field);border-radius:10px;background:#fff;font-size:16px;font-weight:400;color:var(--ink)}
 .field textarea{min-height:140px;resize:vertical}
+.field select{-webkit-appearance:none;appearance:none;padding-right:40px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2356625C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center}
 #toast{position:fixed;z-index:20;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 80px);max-width:calc(100% - 32px);padding:12px 16px;border-radius:12px;background:var(--ink);color:#fff;font-size:13px;display:none}
 #toast.show{display:block}
 svg{display:block}
@@ -221,7 +222,15 @@ function timeOf(ms, offset) {
 
 function fmtDuration(min) { return Math.floor(min / 60) + 'h ' + pad(min % 60) + 'm'; }
 function fmt1(v) { return (Math.round(v * 10) / 10).toFixed(1); }
-function fmtKg(kg) { return fmt1(kg) + ' kg'; }
+/* Weights are always stored in kilograms; the chosen unit only changes what is shown and typed. */
+var LB_PER_KG = 2.2046226218;
+function weightUnit() {
+  var s = state && state.settings.find(function (x) { return x.name === 'unit.weight'; });
+  return s && s.value === 'lb' ? 'lb' : 'kg';
+}
+function toUnit(kg) { return weightUnit() === 'lb' ? kg * LB_PER_KG : kg; }
+function fromUnit(value) { return weightUnit() === 'lb' ? value / LB_PER_KG : value; }
+function fmtKg(kg) { return fmt1(toUnit(kg)) + ' ' + weightUnit(); }
 function fmtNumber(v) { return v === Math.floor(v) ? String(v) : fmt1(v); }
 function parseNumber(s) { var v = parseFloat(String(s).trim().replace(',', '.')); return isFinite(v) ? v : null; }
 function average(xs) { return xs.reduce(function (a, b) { return a + b; }, 0) / xs.length; }
@@ -631,7 +640,7 @@ function viewToday() {
   if (isOn(KEYS.ACTIVITY)) {
     html += '<section class="card"><h2 class="label">Activity</h2><div class="chips mt10">' +
       acts.map(function (a) {
-        return '<button class="chip" data-act="removeActivity" data-id="' + a.id + '">' + esc(a.name) + ', ' + a.durationMinutes + ' min</button>';
+        return '<button class="chip" data-act="editActivity" data-id="' + a.id + '">' + esc(a.name) + ', ' + fmtMinutes(a.durationMinutes) + '</button>';
       }).join('') +
       '<button class="seg" data-act="openActivity" aria-pressed="false">+ Add</button></div></section>';
   }
@@ -794,7 +803,7 @@ function figures(start, end) {
   var acts = state.activities.filter(inRange);
   var activeDays = {};
   acts.forEach(function (a) { activeDays[a.localDate] = 1; });
-  var change = weights.length > 1 ? Math.round((weights[weights.length - 1].kg - weights[0].kg) * 10) / 10 : null;
+  var change = weights.length > 1 ? weights[weights.length - 1].kg - weights[0].kg : null;
   return {
     sleepAvg: sleeps.length ? Math.round(average(sleeps)) : null,
     moodAvg: moods.length ? average(moods) : null,
@@ -804,9 +813,11 @@ function figures(start, end) {
     activityMinutes: acts.reduce(function (a, e) { return a + e.durationMinutes; }, 0)
   };
 }
+/* change is in kilograms; it is rounded in the unit shown. */
 function changeText(change) {
-  if (change > 0) return 'Up ' + fmtKg(change);
-  if (change < 0) return 'Down ' + fmtKg(-change);
+  var shown = Math.round(toUnit(change) * 10) / 10;
+  if (shown > 0) return 'Up ' + fmt1(shown) + ' ' + weightUnit();
+  if (shown < 0) return 'Down ' + fmt1(-shown) + ' ' + weightUnit();
   return 'No change';
 }
 function figureRows(period, f) {
@@ -822,7 +833,7 @@ function figureRows(period, f) {
   }
   if (isOn(KEYS.FOOD)) rows.push(['Meals logged', String(f.meals)]);
   if (isOn(KEYS.ACTIVITY)) {
-    rows.push(isDay ? ['Activity', f.activityMinutes + ' min'] : ['Active days', f.activeDays + ', ' + f.activityMinutes + ' min in total']);
+    rows.push(isDay ? ['Activity', fmtMinutes(f.activityMinutes)] : ['Active days', f.activeDays + ', ' + fmtMinutes(f.activityMinutes) + ' in total']);
   }
   return rows;
 }
@@ -916,6 +927,10 @@ function buildReport(attached) {
   L.push('- Use only the figures and entries below. Do not invent numbers. If there is too little data to see a pattern, say so plainly.');
   L.push('- Do not diagnose or give medical advice. If something looks worth raising with a doctor, say that in one sentence.');
   if (attached.length) L.push('- Photos of some meals are attached; each meal below names its photo file. Use them to see what was eaten where the text says little.');
+  if (isOn(KEYS.FOOD) && isOn(KEYS.MOOD)) {
+    L.push('- I want to know whether sweets affect my mood. Spot sweets in the meals (desserts, chocolate, cake, ice cream, candy, sweet drinks and similar), from the text' +
+      (attached.length ? ' and the photos' : '') + '. Then compare my mood on days with and without sweets, and on the day after a day with sweets. Name the sweets you counted, so I can correct you. With fewer than about two weeks of meals and mood, say it is too early to tell rather than guessing.');
+  }
   L.push('- Keep the whole summary under about 200 words. I may ask follow-up questions afterwards.', '');
   L.push('Mood is recorded on a scale from 1 (low) to 5 (great). Sleep is the time slept the night before each date. Weeks run Sunday to Saturday.', '');
 
@@ -951,7 +966,7 @@ function reportDay(iso, attached) {
         out.push('- Meal at ' + timeOf(m.eatenAt, m.zoneOffset) + ': ' + (m.text ? oneLine(m.text) : '(no description)') + note);
       });
   }
-  if (isOn(KEYS.ACTIVITY)) state.activities.filter(on).forEach(function (a) { out.push('- Activity: ' + oneLine(a.name) + ', ' + a.durationMinutes + ' min'); });
+  if (isOn(KEYS.ACTIVITY)) state.activities.filter(on).forEach(function (a) { out.push('- Activity: ' + oneLine(a.name) + ', ' + fmtMinutes(a.durationMinutes)); });
   state.notes.filter(on).forEach(function (n) {
     if (n.kind === 'dream' && isOn(KEYS.DREAMS)) out.push('- Dream: ' + oneLine(n.text));
     if (n.kind === 'thought' && isOn(KEYS.THOUGHTS)) out.push('- Thoughts: ' + oneLine(n.text));
@@ -984,6 +999,10 @@ function viewTrackers() {
       switchBtn('toggleCustom', t.id, t.name + ' tracker', t.enabled) + '</div>';
   });
   html += '<button class="item accent" data-act="addTracker"><span class="title">Add your own tracker</span></button></section>';
+
+  html += '<section class="card"><h2 class="label">Weight unit</h2><div class="row mt10" role="group" aria-label="Weight unit">' +
+    seg('weightUnit', 'kg', 'Kilograms (kg)', weightUnit() === 'kg') + seg('weightUnit', 'lb', 'Pounds (lb)', weightUnit() === 'lb') +
+    '</div><p class="cap mt8">Weights are kept exactly; this only changes how they are shown and entered.</p></section>';
 
   html += '<section class="card flush" aria-label="Google Drive"><h2 class="label pad">Google Drive (optional)</h2>' + driveCard() + '</section>';
 
@@ -1044,7 +1063,7 @@ function viewWeight() {
 
   var changeLine = 'Needs weigh-ins on two days';
   if (averages.length >= 2) {
-    var change = Math.round((averages[averages.length - 1].kg - averages[0].kg) * 10) / 10;
+    var change = averages[averages.length - 1].kg - averages[0].kg;
     changeLine = changeText(change) + ' since ' + shortDate(averages[0].date);
   }
   html += '<section class="card"><div class="row wide"><div><div class="label">Latest</div><div class="big">' + (latest ? fmtKg(latest.kg) : 'None yet') +
@@ -1065,15 +1084,15 @@ function viewWeight() {
   return html + '<button class="btn primary block" data-act="addWeight">Add weigh-in</button></main>';
 }
 function trendChart(start, end, dots, averages) {
-  var values = dots.map(function (w) { return w.kg; }).concat(averages.map(function (a) { return a.kg; }));
+  var values = dots.map(function (w) { return toUnit(w.kg); }).concat(averages.map(function (a) { return toUnit(a.kg); }));
   var low = Math.floor(Math.min.apply(null, values) - 0.2), high = Math.ceil(Math.max.apply(null, values) + 0.2);
   if (high - low < 1) high = low + 1;
   var span = daysBetween(start, end);
   var x = function (iso) { return 44 + (span <= 0 ? 0.5 : daysBetween(start, iso) / span) * 278; };
-  var y = function (kg) { return 14 + (1 - (kg - low) / (high - low)) * 132; };
+  var y = function (kg) { return 14 + (1 - (toUnit(kg) - low) / (high - low)) * 132; };
   var svg = '<svg role="img" aria-label="Weight trend from ' + shortDate(start) + ' to ' + shortDate(end) + '" viewBox="0 0 330 172" style="width:100%;height:auto">' +
     '<g stroke="#E8ECEA" stroke-width="1"><path d="M40 14H326"/><path d="M40 80H326"/><path d="M40 146H326"/></g>' +
-    '<g fill="#56625C" font-size="12" font-family="inherit"><text x="0" y="18">' + fmtNumber(high) + ' kg</text><text x="0" y="84">' + fmtNumber((low + high) / 2) +
+    '<g fill="#56625C" font-size="12" font-family="inherit"><text x="0" y="18">' + fmtNumber(high) + ' ' + weightUnit() + '</text><text x="0" y="84">' + fmtNumber((low + high) / 2) +
     '</text><text x="0" y="150">' + fmtNumber(low) + '</text><text x="40" y="168">' + shortDate(start) + '</text><text x="326" y="168" text-anchor="end">' + shortDate(end) + '</text></g><g fill="#5E9E8B">';
   dots.forEach(function (w) { svg += '<circle cx="' + x(w.localDate).toFixed(1) + '" cy="' + y(w.kg).toFixed(1) + '" r="3"/>'; });
   svg += '</g>';
@@ -1209,23 +1228,71 @@ document.addEventListener('change', function (e) {
     if (sheet && document.getElementById('meal-photo')) { sheet.photoNew = url; paintMealPhoto(); }
   }, function () { toast('That file could not be read as a picture'); });
 });
-function activitySheet() {
-  var d = ui.date, seen = {}, recent = [];
+var ACTIVITY_TYPES = ['Walk', 'Run', 'Cycling', 'Swimming', 'Gym', 'Yoga', 'Stretching', 'Hiking', 'Dancing', 'Sports', 'Housework', 'Gardening'];
+var DURATIONS = [[15, '15 min'], [30, '30 min'], [60, '1 h'], [90, '1 h 30 min'], [120, '2 h']];
+var OTHER = '__other';
+
+function fmtMinutes(m) {
+  if (m < 60) return m + ' min';
+  return Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '');
+}
+/* Understands "45", "45 min", "1:15", "1h", "1h 20", "1 h 30 min", "1.5h" and "2 hours". */
+function parseDuration(text) {
+  var s = String(text).trim().toLowerCase().replace(',', '.'), m;
+  if (!s) return null;
+  if ((m = /^(\d{1,2}):(\d{1,2})$/.exec(s))) return Number(m[1]) * 60 + Number(m[2]);
+  if ((m = /^(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\s*(?:(\d{1,2})\s*(?:m|min|mins|minute|minutes)?)?$/.exec(s))) {
+    return Math.round(Number(m[1]) * 60) + Number(m[2] || 0);
+  }
+  if ((m = /^(\d+)\s*(?:m|min|mins|minute|minutes)?$/.exec(s))) return Number(m[1]);
+  return null;
+}
+/* Adds an activity, or edits one when id is given. Both questions are lists with "Other…" for typing. */
+function activitySheet(id) {
+  var d = ui.date, cur = id ? byId(state.activities, id) : null;
+  // The person's own activities that are not in the usual list come after it, most recent first.
+  var own = [];
   state.activities.slice().sort(function (a, b) { return b.recordedAt - a.recordedAt; }).forEach(function (a) {
-    if (!seen[a.name] && recent.length < 6) { seen[a.name] = 1; recent.push(a.name); }
+    if (ACTIVITY_TYPES.indexOf(a.name) < 0 && own.indexOf(a.name) < 0 && own.length < 6) own.push(a.name);
   });
+  var names = ACTIVITY_TYPES.concat(own);
+  var curName = cur ? cur.name : '', nameListed = !cur || names.indexOf(curName) >= 0;
+  var curMinutes = cur ? cur.durationMinutes : 30;
+  var minutesListed = DURATIONS.some(function (x) { return x[0] === curMinutes; });
+  var option = function (value, label, selected) {
+    return '<option value="' + esc(value) + '"' + (selected ? ' selected' : '') + '>' + esc(label) + '</option>';
+  };
   openSheet({
-    title: 'Add an activity',
-    body: field('What did you do?', '<input name="name" type="text" required autocomplete="off">') +
-      (recent.length ? '<div class="chips">' + recent.map(function (n) { return '<button type="button" class="seg" data-act="pickActivity" data-val="' + esc(n) + '" aria-pressed="false">' + esc(n) + '</button>'; }).join('') + '</div>' : '') +
-      field('Minutes', '<input name="minutes" type="number" inputmode="numeric" min="1" max="1440" step="1" required>'),
+    title: cur ? 'Edit activity' : 'Add an activity',
+    autofocus: false,
+    body: field('What did you do?', '<select name="pick">' + (cur ? '' : '<option value="" selected disabled>Choose an activity</option>') +
+        names.map(function (n) { return option(n, n, n === curName); }).join('') + option(OTHER, 'Other…', !nameListed) + '</select>') +
+      '<div id="other-pick"' + (nameListed ? ' hidden' : '') + '>' +
+        field('Activity', '<input name="otherPick" type="text" autocomplete="off" value="' + (nameListed ? '' : esc(curName)) + '">') + '</div>' +
+      field('How long?', '<select name="dur">' + DURATIONS.map(function (x) { return option(x[0], x[1], x[0] === curMinutes); }).join('') +
+        option(OTHER, 'Other…', !minutesListed) + '</select>') +
+      '<div id="other-dur"' + (minutesListed ? ' hidden' : '') + '>' +
+        field('Duration, for example 45, 1:15 or 1h 20', '<input name="otherDur" type="text" autocomplete="off" value="' + (minutesListed ? '' : fmtMinutes(curMinutes)) + '">') + '</div>',
+    extraLabel: cur ? 'Delete' : null,
+    onExtra: function () { removeFrom('activities', cur); commit(); },
     onSubmit: function (v) {
-      if (!v.name.trim()) { toast('Write what you did'); return false; }
-      state.activities.push({ id: nextId(state.activities), localDate: d, recordedAt: Date.now(), zoneOffset: currentOffset(), name: v.name.trim(), durationMinutes: Number(v.minutes) });
+      var name = (v.pick === OTHER ? v.otherPick || '' : v.pick || '').trim();
+      if (!name) { toast(v.pick === OTHER ? 'Write the activity' : 'Choose an activity'); return false; }
+      var minutes = v.dur === OTHER ? parseDuration(v.otherDur || '') : Number(v.dur);
+      if (!minutes || minutes < 1 || minutes > 1440) { toast('Enter how long, for example 45, 1:15 or 1h 20'); return false; }
+      if (cur) { cur.name = name; cur.durationMinutes = minutes; }
+      else state.activities.push({ id: nextId(state.activities), localDate: d, recordedAt: Date.now(), zoneOffset: currentOffset(), name: name, durationMinutes: minutes });
       commit();
     }
   });
 }
+/* Shows the typing field when "Other…" is chosen in either list. */
+document.addEventListener('change', function (e) {
+  var box = e.target.name === 'pick' ? document.getElementById('other-pick') : e.target.name === 'dur' ? document.getElementById('other-dur') : null;
+  if (!box) return;
+  box.hidden = e.target.value !== OTHER;
+  if (!box.hidden) { var input = box.querySelector('input'); if (input) input.focus(); }
+});
 function noteSheet(kind) {
   var d = ui.date, cur = state.notes.find(function (n) { return n.localDate === d && n.kind === kind; });
   openSheet({
@@ -1277,14 +1344,16 @@ function weightSheet(id) {
   var cur = id ? byId(state.weights, id) : null;
   openSheet({
     title: cur ? 'Edit weigh-in' : 'Add weigh-in',
-    body: field('Weight in kg', '<input name="kg" type="text" inputmode="decimal" required value="' + (cur ? fmt1(cur.kg) : '') + '">') +
+    body: field('Weight in ' + weightUnit(), '<input name="kg" type="text" inputmode="decimal" required value="' + (cur ? fmt1(toUnit(cur.kg)) : '') + '">') +
       '<div class="row wide">' + field('Date', '<input name="date" type="date" required max="' + todayIso() + '" value="' + (cur ? cur.localDate : todayIso()) + '">') +
       field('Time', '<input name="time" type="time" required value="' + (cur ? timeOf(cur.measuredAt, cur.zoneOffset) : nowHHMM()) + '">') + '</div>',
     extraLabel: cur ? 'Delete' : null,
     onExtra: function () { removeFrom('weights', cur); commit(); },
     onSubmit: function (v) {
-      var kg = parseNumber(v.kg);
-      if (kg == null || kg <= 20 || kg >= 400) { toast('Enter a weight in kg'); return false; }
+      var typed = parseNumber(v.kg);
+      // An unchanged value keeps the exact stored weight, so switching units never shifts it.
+      var kg = cur && v.kg.trim() === fmt1(toUnit(cur.kg)) ? cur.kg : typed == null ? null : fromUnit(typed);
+      if (kg == null || kg <= 20 || kg >= 400) { toast('Enter a weight in ' + weightUnit()); return false; }
       if (v.date > todayIso()) { toast('The date cannot be in the future'); return false; }
       var offset = cur ? cur.zoneOffset : currentOffset();
       var entry = { id: cur ? cur.id : nextId(state.weights), localDate: v.date, measuredAt: toEpoch(v.date, v.time, offset), zoneOffset: offset, kg: kg, source: cur ? cur.source : 'manual' };
@@ -1824,12 +1893,8 @@ var actions = {
     if (sheet.photoName) Photos.load(sheet.photoName).then(function (url) { if (url && !viewerOpen) openViewer(url); });
   },
   closeViewer: function () { closeViewer(); },
-  openActivity: function () { activitySheet(); },
-  pickActivity: function (d) { var input = document.querySelector('.sheet input[name="name"]'); if (input) input.value = d.val; },
-  removeActivity: function (d) {
-    var a = byId(state.activities, d.id);
-    if (a) confirmSheet('Remove activity?', a.name + ', ' + a.durationMinutes + ' min', 'Remove', function () { removeFrom('activities', a); commit(); });
-  },
+  openActivity: function () { activitySheet(null); },
+  editActivity: function (d) { activitySheet(d.id); },
   openNote: function (d) { noteSheet(d.kind); },
   customSet: function (d) {
     var t = byId(state.customTrackers, d.id), n = Number(d.val);
@@ -1873,6 +1938,11 @@ var actions = {
   toggle: function (d) {
     var cur = state.settings.find(function (s) { return s.name === d.key; }), on = !isOn(d.key);
     if (cur) cur.value = on ? '1' : '0'; else state.settings.push({ name: d.key, value: on ? '1' : '0' });
+    commit();
+  },
+  weightUnit: function (d) {
+    var cur = state.settings.find(function (x) { return x.name === 'unit.weight'; });
+    if (cur) cur.value = d.val; else state.settings.push({ name: 'unit.weight', value: d.val });
     commit();
   },
   toggleCustom: function (d) { var t = byId(state.customTrackers, d.key); if (t) { t.enabled = !t.enabled; commit(); } },
