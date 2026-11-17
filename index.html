@@ -1,0 +1,1862 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Life Diary</title>
+<meta name="theme-color" content="#F3F5F4">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Life Diary">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+:root{
+  --bg:#F3F5F4; --border:#DDE3E0; --divider:#E8ECEA; --ink:#16201C; --muted:#56625C;
+  --accent:#1F6F5C; --accent-dark:#17574A; --tint:#E3EFEA; --field:#7C8782; --warn:#B4500F; --dot:#5E9E8B;
+  --r1:#EAF1EE; --r2:#CFE3DB; --r3:#A5CDBE; --r4:#2F7F6A; --r5:#17574A;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.4;-webkit-tap-highlight-color:transparent}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;touch-action:manipulation}
+button:disabled{cursor:default}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+h1,h2,p{margin:0}
+#app{max-width:480px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 8px) 16px calc(env(safe-area-inset-bottom) + 96px)}
+.top{display:flex;align-items:center;gap:12px;padding:12px 0}
+.top .titles{flex:1;min-width:0}
+.overline{font-size:13px;font-weight:500;color:var(--muted)}
+h1{font-size:26px;font-weight:600;line-height:1.15}
+.icon-btn{flex:none;width:48px;height:48px;display:flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--border);border-radius:10px;background:#fff}
+.icon-btn:disabled{color:#B9C2BE}
+.stack{display:flex;flex-direction:column;gap:12px}
+.card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:14px}
+.card.flush{padding:0;overflow:hidden}
+button.card{display:block;width:100%;text-align:left}
+.label{font-size:13px;font-weight:600;color:var(--muted)}
+.label.pad{padding:14px 14px 4px}
+.big{font-size:24px;font-weight:600;line-height:1.25;margin-top:4px}
+.cap{font-size:12px;color:var(--muted);line-height:1.5}
+.row{display:flex;gap:8px}
+.row>*{flex:1 1 0;min-width:0}
+.row.wide{gap:12px}
+.mt4{margin-top:4px}.mt8{margin-top:8px}.mt10{margin-top:10px}.mt12{margin-top:12px}
+.seg{height:48px;padding:0 4px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.btn{height:48px;padding:0 14px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:14px;font-weight:600;white-space:nowrap}
+.btn.tint{background:var(--tint);border-color:var(--accent);color:var(--accent-dark)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.block{display:block;width:100%}
+.btn.plain{border-color:transparent;background:none;color:var(--muted)}
+.btn.danger{border-color:transparent;background:none;color:var(--warn)}
+.btn:disabled{opacity:.5}
+.line{display:flex;align-items:center;gap:12px;width:100%;min-height:48px;padding:8px 0;border:0;background:none;text-align:left}
+.line + .line{border-top:1px solid var(--divider)}
+.line .time{flex:none;width:44px;font-size:12px;color:var(--muted)}
+.line .grow{flex:1;min-width:0;overflow-wrap:anywhere}
+.item{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:8px 14px;border:0;background:none;text-align:left}
+.item + .item, .item + .sep, .sep + .item{border-top:1px solid var(--divider)}
+.item .grow{flex:1;min-width:0}
+.item .title{font-size:14px;font-weight:600}
+.item .sub{font-size:12px;color:var(--muted);line-height:1.5;overflow-wrap:anywhere}
+.item.accent .title{color:var(--accent-dark)}
+.item.sep{border-top:1px solid var(--divider)}
+.seg:has(input:checked){border-color:var(--accent);background:var(--tint);color:var(--accent-dark);font-weight:600}
+.item:disabled .title{color:var(--muted)}
+.strong{font-weight:600}
+.thumb{flex:none;width:56px;height:56px;border-radius:8px;object-fit:cover;background:var(--tint)}
+.photo-btn{display:block;width:100%;padding:0;border:0;background:none}
+.photo-preview{display:block;width:100%;max-height:260px;border-radius:10px;object-fit:cover;background:var(--tint)}
+.viewer{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;padding:0;border:0;background:rgba(0,0,0,.92)}
+.viewer img{max-width:100%;max-height:100%}
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
+.chip{flex:none;height:48px;padding:0 14px;border:0;border-radius:10px;background:var(--tint);color:var(--accent-dark);font-size:14px;font-weight:500;white-space:nowrap}
+.chips .seg{flex:none;padding:0 14px}
+.switch{flex:none;width:56px;height:48px;padding:0;border:0;background:none;display:flex;align-items:center;justify-content:center}
+.switch span{width:46px;height:26px;padding:3px;border-radius:13px;background:var(--field);display:flex;justify-content:flex-start}
+.switch span::after{content:"";width:20px;height:20px;border-radius:50%;background:#fff}
+.switch[aria-checked="true"] span{background:var(--accent);justify-content:flex-end}
+.value-btn{display:block;width:100%;min-height:48px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:#fff;text-align:left;font-size:14px;color:var(--muted);overflow-wrap:anywhere}
+.value-btn.filled{background:var(--tint);color:var(--accent-dark);font-weight:600}
+.banner{display:block;width:100%;padding:12px 14px;border:1px solid var(--accent);border-radius:12px;background:var(--tint);color:var(--accent-dark);font-size:13px;font-weight:600;text-align:left;line-height:1.45}
+.banner.note{border-color:var(--border);background:#fff;color:var(--ink);font-weight:400}
+.weekdays,.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.weekdays{font-size:12px;font-weight:500;color:var(--muted);text-align:center}
+.day{height:44px;padding:0;border:1px solid var(--divider);border-radius:10px;background:#fff;color:var(--muted);font-size:14px;font-weight:500}
+.day:disabled{color:#B9C2BE}
+.day.l1{background:var(--r1);border-color:transparent;color:var(--ink)}
+.day.l2{background:var(--r2);border-color:transparent;color:var(--ink)}
+.day.l3{background:var(--r3);border-color:transparent;color:var(--ink)}
+.day.l4{background:var(--r4);border-color:transparent;color:#fff}
+.day.l5{background:var(--r5);border-color:transparent;color:#fff}
+.day.today{border:2px solid var(--ink);font-weight:600}
+.legend{display:flex;align-items:center;gap:8px}
+.legend i{display:inline-block;width:18px;height:12px;border-radius:3px}
+.week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.week .col{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:12px;color:var(--muted)}
+.bar-box{width:100%;height:112px;display:flex;align-items:flex-end}
+.bar{width:100%;border-radius:6px 6px 2px 2px;background:var(--r3)}
+.bar.low{background:var(--warn)}
+.mood-dot{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;border:1px solid var(--divider);color:var(--muted)}
+.mood-dot.l1{background:var(--r1);border-color:transparent;color:var(--ink)}
+.mood-dot.l2{background:var(--r2);border-color:transparent;color:var(--ink)}
+.mood-dot.l3{background:var(--r3);border-color:transparent;color:var(--ink)}
+.mood-dot.l4{background:var(--r4);border-color:transparent;color:#fff}
+.mood-dot.l5{background:var(--r5);border-color:transparent;color:#fff}
+.month{display:flex;gap:2px}
+.month .col{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px}
+.month .bar{border-radius:2px}
+.month .pip{width:7px;height:7px;border-radius:50%}
+.spread{display:flex;justify-content:space-between}
+.fig{display:flex;align-items:center;gap:12px;padding:12px 14px}
+.fig + .fig{border-top:1px solid var(--divider)}
+.fig .grow{flex:1}
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:5;background:#fff;border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom)}
+.tabs .inner{max-width:480px;margin:0 auto;display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+.tab{height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0;border:0;background:none;font-size:12px;font-weight:500;color:var(--muted)}
+.tab[aria-current="page"]{color:var(--accent);font-weight:600}
+.scrim{position:fixed;inset:0;z-index:10;background:rgba(22,32,28,.5)}
+.sheet{position:fixed;z-index:11;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 20px);width:min(448px,calc(100% - 32px));max-height:calc(100% - 40px);overflow:auto;display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:16px;background:#fff}
+.sheet h2{font-size:20px;font-weight:600}
+.sheet-actions{display:flex;justify-content:flex-end;gap:4px;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
+.field input,.field textarea{width:100%;min-height:48px;padding:12px;border:1px solid var(--field);border-radius:10px;background:#fff;font-size:16px;font-weight:400;color:var(--ink)}
+.field textarea{min-height:140px;resize:vertical}
+#toast{position:fixed;z-index:20;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 80px);max-width:calc(100% - 32px);padding:12px 16px;border-radius:12px;background:var(--ink);color:#fff;font-size:13px;display:none}
+#toast.show{display:block}
+svg{display:block}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<nav class="tabs" aria-label="Main"><div class="inner" id="tabs"></div></nav>
+<div id="sheet-root"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<input id="restore-file" type="file" accept="application/json,.json" hidden>
+<script src="config.js"></script>
+<script>
+(function () {
+'use strict';
+
+/* ------------------------------------------------------------------ setup */
+
+var CFG = window.LIFE_DIARY_CONFIG || {};
+var CLIENT_ID = String(CFG.googleClientId || '').trim();
+var PREVIEW = !!CFG.preview;   // a try-out copy where files cannot be saved and data is not kept safely
+var APP_TAG = 'LifeDiary';
+var COLLECTIONS = ['moods', 'sleeps', 'weights', 'meals', 'activities', 'notes', 'customTrackers', 'customValues', 'settings'];
+var MOODS = ['Low', 'Meh', 'OK', 'Good', 'Great'];
+var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+var KEYS = {
+  FOOD: 'tracker.food', MOOD: 'tracker.mood', SLEEP: 'tracker.sleep', WEIGHT: 'tracker.weight',
+  ACTIVITY: 'tracker.activity', DREAMS: 'tracker.dreams', THOUGHTS: 'tracker.thoughts'
+};
+var DEFAULTS = {};
+DEFAULTS[KEYS.FOOD] = '1'; DEFAULTS[KEYS.MOOD] = '1'; DEFAULTS[KEYS.SLEEP] = '1'; DEFAULTS[KEYS.WEIGHT] = '1';
+DEFAULTS[KEYS.ACTIVITY] = '1'; DEFAULTS[KEYS.DREAMS] = '0'; DEFAULTS[KEYS.THOUGHTS] = '1';
+
+var BUILT_IN = [
+  [KEYS.FOOD, 'Food', 'A line of text or a photo per meal'],
+  [KEYS.MOOD, 'Mood', 'One tap, five levels'],
+  [KEYS.SLEEP, 'Sleep', 'Hours slept, entered by hand'],
+  [KEYS.WEIGHT, 'Weight', 'Typed in, with date and time'],
+  [KEYS.ACTIVITY, 'Activity', 'What you did and for how long'],
+  [KEYS.DREAMS, 'Dreams', 'Free text, best written on waking'],
+  [KEYS.THOUGHTS, 'Thoughts', 'A few lines about the day']
+];
+var TRACKER_TYPES = [['number', 'Number'], ['scale_1_5', 'Scale 1 to 5'], ['yes_no', 'Yes or no'], ['text', 'Text']];
+var RANGES = [['week', 'Week', 7], ['month', 'Month', 30], ['quarter', '3 months', 90], ['year', 'Year', 365]];
+
+/* ---------------------------------------------------------------- helpers */
+
+function pad(n) { return String(n).padStart(2, '0'); }
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function isoOf(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function parseIso(s) { var p = s.split('-').map(Number); return new Date(p[0], p[1] - 1, p[2], 12); }
+function todayIso() { return isoOf(new Date()); }
+function addDays(iso, n) { var d = parseIso(iso); d.setDate(d.getDate() + n); return isoOf(d); }
+function daysBetween(a, b) { return Math.round((parseIso(b) - parseIso(a)) / 86400000); }
+function dayMonth(iso) { var d = parseIso(iso); return d.getDate() + ' ' + MONTHS[d.getMonth()]; }
+function shortDate(iso) { var d = parseIso(iso); return d.getDate() + ' ' + MONTHS[d.getMonth()].slice(0, 3); }
+function weekdayName(iso) { return DAYS[parseIso(iso).getDay()]; }
+function shortWeekday(iso) { return weekdayName(iso).slice(0, 3); }
+function shortDay(iso) { return shortWeekday(iso) + ' ' + dayMonth(iso); }
+function monthStart(ym) { return ym + '-01'; }
+function monthEnd(ym) { var p = ym.split('-').map(Number); return ym + '-' + pad(new Date(p[0], p[1], 0).getDate()); }
+function addMonths(ym, n) { var p = ym.split('-').map(Number); var d = new Date(p[0], p[1] - 1 + n, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); }
+function monthYear(ym) { var p = ym.split('-').map(Number); return MONTHS[p[1] - 1] + ' ' + p[0]; }
+function sundayOf(iso) { return addDays(iso, -parseIso(iso).getDay()); }
+function nowHHMM() { var d = new Date(); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+
+/* Every entry stores the phone's UTC offset at the time, e.g. "+07:00", so the
+   clock time it shows never changes when the phone moves to another time zone. */
+function currentOffset() {
+  var m = -new Date().getTimezoneOffset();
+  if (m === 0) return 'Z';
+  var a = Math.abs(m);
+  return (m < 0 ? '-' : '+') + pad(Math.floor(a / 60)) + ':' + pad(a % 60);
+}
+function offsetMinutes(id) {
+  var m = /^([+-])(\d\d):?(\d\d)/.exec(id || '');
+  return m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 0;
+}
+function toEpoch(iso, hhmm, offset) {
+  var p = iso.split('-').map(Number), t = hhmm.split(':').map(Number);
+  return Date.UTC(p[0], p[1] - 1, p[2], t[0], t[1]) - offsetMinutes(offset) * 60000;
+}
+function timeOf(ms, offset) {
+  var d = new Date(ms + offsetMinutes(offset) * 60000);
+  return pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes());
+}
+
+function fmtDuration(min) { return Math.floor(min / 60) + 'h ' + pad(min % 60) + 'm'; }
+function fmt1(v) { return (Math.round(v * 10) / 10).toFixed(1); }
+function fmtKg(kg) { return fmt1(kg) + ' kg'; }
+function fmtNumber(v) { return v === Math.floor(v) ? String(v) : fmt1(v); }
+function parseNumber(s) { var v = parseFloat(String(s).trim().replace(',', '.')); return isFinite(v) ? v : null; }
+function average(xs) { return xs.reduce(function (a, b) { return a + b; }, 0) / xs.length; }
+function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+
+function relativeDay(entryIso, referenceIso, time) {
+  var days = daysBetween(entryIso, referenceIso);
+  var suffix = time ? ', ' + time : '';
+  var isToday = referenceIso === todayIso();
+  if (days === 0) return (isToday ? 'Today' : 'This day') + suffix;
+  if (days === 1) return (isToday ? 'Yesterday' : 'The day before') + suffix;
+  return days + ' days ' + (isToday ? 'ago' : 'earlier');
+}
+function rangeLabel(start, end) {
+  if (start === end) return weekdayName(start) + ' ' + dayMonth(start);
+  if (start.slice(0, 7) === end.slice(0, 7)) return parseIso(start).getDate() + ' to ' + dayMonth(end);
+  return dayMonth(start) + ' to ' + dayMonth(end);
+}
+function agoLabel(ms) {
+  if (!ms) return 'never';
+  var min = Math.round((Date.now() - ms) / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return plural(min, 'minute', 'minutes') + ' ago';
+  if (min < 1440) return plural(Math.round(min / 60), 'hour', 'hours') + ' ago';
+  return plural(Math.round(min / 1440), 'day', 'days') + ' ago';
+}
+
+/* Small values (screen state, sync details) live in localStorage; it can be
+   unavailable in some browsers, so every access is guarded. */
+var memoryPrefs = {};
+function lsGet(key, fallback) {
+  try { var t = localStorage.getItem(key); return t == null ? fallback : JSON.parse(t); }
+  catch (e) { return key in memoryPrefs ? memoryPrefs[key] : fallback; }
+}
+function lsSet(key, value) {
+  memoryPrefs[key] = value;
+  try { if (value == null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(value)); }
+  catch (e) { /* kept in memory only */ }
+}
+
+var ICON = {
+  left: '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>',
+  right: '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+  back: '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
+  chev: '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#56625C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+  today: '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>',
+  history: '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>',
+  summary: '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V11M12 20V4M19 20v-6"/></svg>',
+  trackers: '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>'
+};
+
+/* ------------------------------------------------------------------ data */
+
+function emptyState() {
+  var s = { app: APP_TAG, version: 1, modifiedAt: 0 };
+  COLLECTIONS.forEach(function (k) { s[k] = []; });
+  return s;
+}
+/* Accepts a diary from storage, a backup file (from this app or the Android app) or Google Drive. */
+function normalize(obj) {
+  var s = emptyState();
+  COLLECTIONS.forEach(function (k) { if (obj && Array.isArray(obj[k])) s[k] = obj[k]; });
+  s.modifiedAt = Number(obj && (obj.modifiedAt || obj.exportedAt)) || Date.now();
+  return s;
+}
+function isEmpty(s) {
+  return COLLECTIONS.every(function (k) { return k === 'settings' || s[k].length === 0; });
+}
+function daysWithEntries(s) {
+  var set = {};
+  ['moods', 'sleeps', 'weights', 'meals', 'activities', 'notes', 'customValues'].forEach(function (k) {
+    s[k].forEach(function (e) { set[e.localDate] = 1; });
+  });
+  return Object.keys(set).length;
+}
+
+/* The diary itself is kept in the browser's database (IndexedDB), falling back
+   to localStorage, then to memory only. */
+var Store = (function () {
+  var backend = 'memory', db = null, pending = Promise.resolve(), mem = {};
+  function openDb() {
+    return new Promise(function (resolve, reject) {
+      var req;
+      try { req = indexedDB.open('life-diary', 1); } catch (e) { reject(e); return; }
+      req.onupgradeneeded = function () { req.result.createObjectStore('kv'); };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+      req.onblocked = function () { reject(new Error('blocked')); };
+      setTimeout(function () { reject(new Error('timeout')); }, 3000);
+    });
+  }
+  function idb(mode, run) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction('kv', mode), req = run(tx.objectStore('kv'));
+      tx.oncomplete = function () { resolve(req.result); };
+      tx.onerror = tx.onabort = function () { reject(tx.error); };
+    });
+  }
+  function init() {
+    return openDb().then(function (d) { db = d; backend = 'idb'; }).catch(function () {
+      try { localStorage.setItem('ld.test', '1'); localStorage.removeItem('ld.test'); backend = 'ls'; }
+      catch (e) { backend = 'memory'; }
+    });
+  }
+  function load(key) {
+    if (backend === 'idb') {
+      return idb('readonly', function (st) { return st.get(key); }).then(function (v) { return v == null ? null : v; }, function () { return null; });
+    }
+    if (backend === 'ls') {
+      try { var t = localStorage.getItem('ld.store.' + key); return Promise.resolve(t == null ? null : JSON.parse(t)); }
+      catch (e) { return Promise.resolve(null); }
+    }
+    return Promise.resolve(key in mem ? mem[key] : null);
+  }
+  /* Resolves to true when the value was stored and false when the browser refused, usually for lack of room. */
+  function save(key, value) {
+    var op;
+    if (backend === 'idb') {
+      op = pending.then(function () {
+        return idb('readwrite', function (st) { return value == null ? st.delete(key) : st.put(value, key); });
+      }).then(function () { return true; }, function () { return false; });
+    } else if (backend === 'ls') {
+      var ok = true;
+      try { if (value == null) localStorage.removeItem('ld.store.' + key); else localStorage.setItem('ld.store.' + key, JSON.stringify(value)); }
+      catch (e) { ok = false; }
+      op = Promise.resolve(ok);
+    } else {
+      if (value == null) delete mem[key]; else mem[key] = value;
+      op = Promise.resolve(true);
+    }
+    pending = op;
+    return op;
+  }
+  function keys(prefix) {
+    if (backend === 'idb') {
+      return idb('readonly', function (st) { return st.getAllKeys(); })
+        .then(function (all) { return all.filter(function (k) { return String(k).indexOf(prefix) === 0; }); }, function () { return []; });
+    }
+    var out = [];
+    if (backend === 'ls') {
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k.indexOf('ld.store.' + prefix) === 0) out.push(k.slice(9));
+        }
+      } catch (e) { /* none */ }
+    } else {
+      Object.keys(mem).forEach(function (k) { if (k.indexOf(prefix) === 0) out.push(k); });
+    }
+    return Promise.resolve(out);
+  }
+  return {
+    init: init, load: load, save: save, keys: keys,
+    flush: function () { return pending; },
+    backend: function () { return backend; }
+  };
+})();
+
+/* Meal photos. Each picture is shrunk to a JPEG and stored on its own, as a
+   data: address the page can show directly. A meal points at its picture by
+   name in photoPath; names start with "ld-photo-". */
+var BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+var Photos = (function () {
+  var cache = {}, cached = 0, loading = {};
+  function remember(name, url) {
+    if (!cache[name] && ++cached > 60) { cache = {}; cached = 1; }
+    cache[name] = url;
+  }
+  /* Fills in pictures that were drawn as placeholders before their data arrived. */
+  function paint(name) {
+    var imgs = document.querySelectorAll('img[data-photo]');
+    for (var i = 0; i < imgs.length; i++) if (imgs[i].getAttribute('data-photo') === name) imgs[i].src = cache[name];
+  }
+  function load(name) {
+    if (cache[name]) return Promise.resolve(cache[name]);
+    if (!loading[name]) {
+      loading[name] = Store.load('photo:' + name).then(function (url) {
+        delete loading[name];
+        if (url) { remember(name, url); paint(name); }
+        return url || null;
+      });
+    }
+    return loading[name];
+  }
+  return {
+    load: load,
+    src: function (name) { if (cache[name]) return cache[name]; load(name); return BLANK; },
+    peek: function (name) { return cache[name] || null; },
+    add: function (name, url) { remember(name, url); paint(name); return Store.save('photo:' + name, url); },
+    remove: function (name) { delete cache[name]; return Store.save('photo:' + name, null); },
+    names: function () { return Store.keys('photo:').then(function (ks) { return ks.map(function (k) { return k.slice(6); }); }); },
+    newName: function () { return 'ld-photo-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) + '.jpg'; }
+  };
+})();
+function photoOf(meal) { return meal && /^ld-photo-/.test(meal.photoPath || '') ? meal.photoPath : null; }
+function mealPhotos(s) {
+  var set = {};
+  if (s) s.meals.forEach(function (m) { var n = photoOf(m); if (n) set[n] = 1; });
+  return set;
+}
+/* Removes stored pictures that no meal uses any more (kept while "Undo last replace" could still need them). */
+function cleanupPhotos() {
+  var keep = Object.assign(mealPhotos(state), mealPhotos(previousState));
+  return Photos.names().then(function (names) {
+    return Promise.all(names.filter(function (n) { return !keep[n]; }).map(Photos.remove));
+  });
+}
+/* Scales a chosen picture down to at most 1280 px on its long side and re-encodes it as a JPEG. */
+function shrinkImage(file) {
+  return new Promise(function (resolve, reject) {
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function () {
+      var scale = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      var g = canvas.getContext('2d');
+      g.fillStyle = '#fff'; g.fillRect(0, 0, canvas.width, canvas.height);
+      g.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      try { resolve(canvas.toDataURL('image/jpeg', 0.72)); } catch (e) { reject(e); }
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('not a picture')); };
+    img.src = url;
+  });
+}
+function dataUrlToBlob(url) {
+  var bin = atob(url.split(',')[1]), bytes = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: 'image/jpeg' });
+}
+function blobToDataUrl(blob) {
+  return new Promise(function (resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function () { resolve(String(reader.result)); };
+    reader.onerror = function () { reject(reader.error); };
+    reader.readAsDataURL(new Blob([blob], { type: 'image/jpeg' }));
+  });
+}
+
+var state = emptyState();
+var previousState = null;
+
+function isOn(key) {
+  var s = state.settings.find(function (x) { return x.name === key; });
+  return (s ? s.value : DEFAULTS[key] || '0') === '1';
+}
+function nextId(list) { return list.reduce(function (m, e) { return Math.max(m, e.id || 0); }, 0) + 1; }
+function byId(list, id) { return list.find(function (e) { return String(e.id) === String(id); }); }
+function removeFrom(key, entry) { state[key] = state[key].filter(function (e) { return e !== entry; }); }
+function sortedWeights() { return state.weights.slice().sort(function (a, b) { return a.measuredAt - b.measuredAt; }); }
+
+/* Call after every change: stamps the diary, saves it, queues a Drive sync and redraws. */
+function commit() {
+  state.modifiedAt = Date.now();
+  Store.save('diary', state);
+  Drive.localChanged();
+  render();
+}
+/* Swaps in a whole diary (restore or Drive), keeping the old one for "Undo last replace". */
+function replaceState(next) {
+  if (!isEmpty(state)) { previousState = state; Store.save('previous', state); }
+  state = next;
+  Store.save('diary', state);
+  render();
+}
+
+/* -------------------------------------------------------------- screen state */
+
+var ui = {
+  tab: 'today', date: todayIso(), showWeight: false,
+  month: todayIso().slice(0, 7), colourBy: 'mood',
+  period: 'week', anchor: todayIso(), weightRange: 'month'
+};
+var navDepth = 0, skipPop = 0, queuedPush = 0;
+var sheet = null;
+
+/* Pop-ups and the weight screen add a history entry, so the phone's Back button closes them.
+   history.back() finishes later, so an entry asked for while one is still being removed
+   waits until that has happened; otherwise the two would cancel out wrongly. */
+function addEntry() { try { history.pushState({ ld: ++navDepth }, ''); } catch (e) { /* not available */ } }
+function pushNav() { if (skipPop > 0) queuedPush++; else addEntry(); }
+function leaveNav() {
+  if (queuedPush > 0) { queuedPush--; return; }       // its entry was never added
+  if (navDepth > 0) { skipPop++; history.back(); }
+}
+window.addEventListener('popstate', function () {
+  navDepth = Math.max(0, navDepth - 1);
+  if (skipPop > 0) {
+    skipPop--;
+    if (skipPop === 0) { while (queuedPush > 0) { queuedPush--; addEntry(); } }
+    return;
+  }
+  if (viewerOpen) { dropViewer(); }
+  else if (sheet) { dropSheet(); }
+  else if (ui.showWeight) { ui.showWeight = false; render(); }
+});
+
+/* Full-screen look at a meal photo; a tap anywhere closes it. */
+var viewerOpen = false;
+function openViewer(src) {
+  var v = document.createElement('button');
+  v.id = 'viewer'; v.className = 'viewer';
+  v.setAttribute('data-act', 'closeViewer'); v.setAttribute('aria-label', 'Close photo');
+  v.innerHTML = '<img alt="Photo of this meal" src="' + src + '">';
+  document.body.appendChild(v);
+  viewerOpen = true; pushNav();
+}
+function dropViewer() { var v = document.getElementById('viewer'); if (v) v.remove(); viewerOpen = false; }
+function closeViewer() { if (viewerOpen) { dropViewer(); leaveNav(); } }
+
+function toast(message) {
+  var el = document.getElementById('toast');
+  el.textContent = message;
+  el.classList.add('show');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(function () { el.classList.remove('show'); }, 3500);
+}
+
+/* ------------------------------------------------------------------ pieces */
+
+function header(overline, title, left, right) {
+  return '<header class="top">' + (left || '') +
+    '<div class="titles"><div class="overline">' + esc(overline) + '</div><h1>' + esc(title) + '</h1></div>' +
+    (right || '') + '</header>';
+}
+function iconBtn(act, icon, label, disabled) {
+  return '<button class="icon-btn" data-act="' + act + '" aria-label="' + label + '"' + (disabled ? ' disabled' : '') + '>' + ICON[icon] + '</button>';
+}
+function seg(act, value, label, selected) {
+  return '<button class="seg" data-act="' + act + '" data-val="' + esc(value) + '" aria-pressed="' + (selected ? 'true' : 'false') + '">' + esc(label) + '</button>';
+}
+function switchBtn(act, key, label, on) {
+  return '<button class="switch" role="switch" aria-checked="' + (on ? 'true' : 'false') + '" aria-label="' + esc(label) + '" data-act="' + act + '" data-key="' + esc(key) + '"><span></span></button>';
+}
+function banners() {
+  var out = '';
+  if (PREVIEW) {
+    out += '<div class="banner note"><span class="strong">Preview.</span> This copy is for trying the app. Entries made here may not be kept, and saving files is switched off.</div>';
+  }
+  if (Store.backend() === 'memory' && !PREVIEW) {
+    out += '<div class="banner note">This browser is not letting the app save data, so entries will be lost when the page closes. Open the app in your normal browser, outside private mode.</div>';
+  }
+  if (Drive.needsSignIn()) {
+    out += '<button class="banner" data-act="driveConnect">Google Drive sync is paused. Tap to sign in and sync.</button>';
+  } else if (Drive.hasConflict()) {
+    out += '<button class="banner" data-act="driveSync">Google Drive has a different version of your diary. Tap to choose which one to keep.</button>';
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------------- today */
+
+function viewToday() {
+  var d = ui.date, today = todayIso();
+  var mood = state.moods.find(function (e) { return e.localDate === d; });
+  var sleep = state.sleeps.find(function (e) { return e.localDate === d; });
+  var meals = state.meals.filter(function (e) { return e.localDate === d; }).sort(function (a, b) { return a.eatenAt - b.eatenAt; });
+  var acts = state.activities.filter(function (e) { return e.localDate === d; }).sort(function (a, b) { return a.recordedAt - b.recordedAt; });
+  var notes = state.notes.filter(function (e) { return e.localDate === d; });
+  var html = header(d === today ? 'Today, ' + weekdayName(d) : weekdayName(d), dayMonth(d), '',
+    iconBtn('dayPrev', 'left', 'Previous day') + iconBtn('dayNext', 'right', 'Next day', d >= today));
+  html += '<main class="stack">' + banners();
+
+  if (!PREVIEW && lsGet('ld.tip', true) && isTouch() && !isStandalone()) {
+    html += '<div class="banner note"><span class="strong">Add this app to your home screen</span> so it opens like an app and keeps its data safely. ' +
+      (isIos() ? 'In Safari, tap the Share button, then "Add to Home Screen".' : 'Open the browser menu and choose "Add to Home screen" or "Install app".') +
+      '<div class="mt8"><button class="btn" data-act="dismissTip">Got it</button></div></div>';
+  }
+
+  if (isOn(KEYS.MOOD)) {
+    html += '<section class="card"><h2 class="label">Mood</h2><div class="row mt10">' +
+      MOODS.map(function (label, i) { return seg('mood', i + 1, label, mood && mood.level === i + 1); }).join('') +
+      '</div></section>';
+  }
+
+  var showSleep = isOn(KEYS.SLEEP), showWeight = isOn(KEYS.WEIGHT);
+  if (showSleep || showWeight) {
+    html += '<div class="row wide">';
+    if (showSleep) {
+      html += '<button class="card" data-act="openSleep"><div class="label">Sleep</div><div class="big">' +
+        (sleep ? fmtDuration(sleep.durationMinutes) : 'Add') + '</div><div class="cap">' +
+        (sleep ? 'Entered by hand' : 'Hours slept last night') + '</div></button>';
+    }
+    if (showWeight) {
+      var latest = sortedWeights().filter(function (w) { return w.localDate <= d; }).pop();
+      html += '<button class="card" data-act="openWeightScreen"><div class="label">Weight</div><div class="big">' +
+        (latest ? fmtKg(latest.kg) : 'Add') + '</div><div class="cap">' +
+        (latest ? relativeDay(latest.localDate, d, timeOf(latest.measuredAt, latest.zoneOffset)) : 'Open to add a weigh-in') +
+        '</div></button>';
+    }
+    html += '</div>';
+  }
+
+  if (isOn(KEYS.FOOD)) {
+    html += '<section class="card"><div class="spread"><h2 class="label">Food</h2><span class="cap">' +
+      (meals.length ? plural(meals.length, 'meal', 'meals') : 'Nothing logged yet') + '</span></div><div class="mt4">' +
+      meals.map(function (m) {
+        var photo = photoOf(m);
+        return '<button class="line" data-act="openMeal" data-id="' + m.id + '"><span class="time">' +
+          timeOf(m.eatenAt, m.zoneOffset) + '</span><span class="grow">' + (m.text ? esc(m.text) : '<span class="cap">Photo</span>') + '</span>' +
+          (photo ? '<img class="thumb" data-photo="' + esc(photo) + '" src="' + Photos.src(photo) + '" alt="Photo of this meal">' : '') + '</button>';
+      }).join('') +
+      '</div><button class="btn tint block mt8" data-act="openMeal">Add a meal</button></section>';
+  }
+
+  if (isOn(KEYS.ACTIVITY)) {
+    html += '<section class="card"><h2 class="label">Activity</h2><div class="chips mt10">' +
+      acts.map(function (a) {
+        return '<button class="chip" data-act="removeActivity" data-id="' + a.id + '">' + esc(a.name) + ', ' + a.durationMinutes + ' min</button>';
+      }).join('') +
+      '<button class="seg" data-act="openActivity" aria-pressed="false">+ Add</button></div></section>';
+  }
+
+  var showDreams = isOn(KEYS.DREAMS), showThoughts = isOn(KEYS.THOUGHTS);
+  if (showDreams || showThoughts) {
+    var dream = notes.find(function (n) { return n.kind === 'dream'; });
+    var thought = notes.find(function (n) { return n.kind === 'thought'; });
+    html += '<section class="card flush">';
+    if (showDreams) html += noteRow('dream', 'Dream', dream ? dream.text : 'Write down what you remember');
+    if (showThoughts) html += noteRow('thought', 'Thoughts', thought ? thought.text : 'A few lines about the day');
+    html += '</section>';
+  }
+
+  state.customTrackers.filter(function (t) { return t.enabled; }).forEach(function (t) {
+    var cur = state.customValues.find(function (v) { return v.trackerId === t.id && v.localDate === d; });
+    var num = cur ? cur.numberValue : null;
+    html += '<section class="card"><h2 class="label">' + esc(t.name) + (t.unit ? ' (' + esc(t.unit) + ')' : '') + '</h2><div class="mt10">';
+    if (t.type === 'scale_1_5') {
+      html += '<div class="row">' + [1, 2, 3, 4, 5].map(function (n) {
+        return '<button class="seg" data-act="customSet" data-id="' + t.id + '" data-val="' + n + '" aria-pressed="' + (num === n) + '">' + n + '</button>';
+      }).join('') + '</div>';
+    } else if (t.type === 'yes_no') {
+      html += '<div class="row"><button class="seg" data-act="customSet" data-id="' + t.id + '" data-val="1" aria-pressed="' + (num === 1) + '">Yes</button>' +
+        '<button class="seg" data-act="customSet" data-id="' + t.id + '" data-val="0" aria-pressed="' + (num === 0) + '">No</button></div>';
+    } else if (t.type === 'text') {
+      var text = cur ? cur.textValue : null;
+      html += '<button class="value-btn' + (text ? ' filled' : '') + '" data-act="openCustomText" data-id="' + t.id + '">' + esc(text || 'Tap to write') + '</button>';
+    } else {
+      html += '<button class="value-btn' + (num != null ? ' filled' : '') + '" data-act="openCustomNumber" data-id="' + t.id + '">' + (num != null ? fmtNumber(num) : 'Tap to enter') + '</button>';
+    }
+    html += '</div></section>';
+  });
+
+  var anyOn = Object.keys(DEFAULTS).some(isOn) || state.customTrackers.some(function (t) { return t.enabled; });
+  if (!anyOn) html += '<p class="cap">All trackers are switched off. Turn some on in the Trackers tab.</p>';
+  return html + '</main>';
+}
+function noteRow(kind, title, sub) {
+  return '<button class="item" data-act="openNote" data-kind="' + kind + '"><span class="grow"><span class="title">' + title +
+    '</span><br><span class="sub">' + esc(sub.length > 120 ? sub.slice(0, 120) + '…' : sub) + '</span></span></button>';
+}
+
+/* ----------------------------------------------------------------- history */
+
+function bucketize(values) {
+  var keys = Object.keys(values), out = {};
+  if (!keys.length) return out;
+  var nums = keys.map(function (k) { return values[k]; });
+  var low = Math.min.apply(null, nums), high = Math.max.apply(null, nums);
+  keys.forEach(function (k) {
+    out[k] = high === low ? 3 : Math.min(5, Math.max(1, 1 + Math.floor((values[k] - low) / (high - low) * 4.999)));
+  });
+  return out;
+}
+function colourOptions() {
+  return [['mood', 'Mood', KEYS.MOOD], ['sleep', 'Sleep', KEYS.SLEEP], ['weight', 'Weight', KEYS.WEIGHT], ['food', 'Food', KEYS.FOOD]]
+    .filter(function (o) { return isOn(o[2]); });
+}
+function calendarLevels(active, start, end) {
+  var inMonth = function (e) { return e.localDate >= start && e.localDate <= end; };
+  var values = {};
+  if (active === 'mood') {
+    state.moods.filter(inMonth).forEach(function (e) { values[e.localDate] = Math.min(5, Math.max(1, e.level)); });
+    return values;
+  }
+  if (active === 'sleep') state.sleeps.filter(inMonth).forEach(function (e) { values[e.localDate] = e.durationMinutes; });
+  if (active === 'weight') sortedWeights().filter(inMonth).forEach(function (e) { values[e.localDate] = e.kg; });
+  if (active === 'food') state.meals.filter(inMonth).forEach(function (e) { values[e.localDate] = (values[e.localDate] || 0) + 1; });
+  return bucketize(values);
+}
+function dayDigest(iso) {
+  var parts = [];
+  var mood = state.moods.find(function (e) { return e.localDate === iso; });
+  if (mood) parts.push('mood ' + MOODS[Math.min(4, Math.max(0, mood.level - 1))].toLowerCase());
+  var sleep = state.sleeps.find(function (e) { return e.localDate === iso; });
+  if (sleep) parts.push('slept ' + fmtDuration(sleep.durationMinutes));
+  var meals = state.meals.filter(function (e) { return e.localDate === iso; }).length;
+  if (meals) parts.push(plural(meals, 'meal', 'meals'));
+  state.activities.filter(function (e) { return e.localDate === iso; }).forEach(function (a) { parts.push(a.name.toLowerCase()); });
+  if (state.notes.some(function (n) { return n.localDate === iso && n.kind === 'dream'; })) parts.push('dream');
+  if (state.notes.some(function (n) { return n.localDate === iso && n.kind === 'thought'; })) parts.push('thoughts');
+  if (!parts.length) return '';
+  var text = parts.join(', ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function viewHistory() {
+  var today = todayIso(), ym = ui.month, start = monthStart(ym), end = monthEnd(ym);
+  var options = colourOptions();
+  var active = (options.find(function (o) { return o[0] === ui.colourBy; }) || options[0] || [null])[0];
+  var levels = active ? calendarLevels(active, start, end) : {};
+
+  var html = header(monthYear(ym), 'History', '',
+    iconBtn('monthPrev', 'left', 'Previous month') + iconBtn('monthNext', 'right', 'Next month', ym >= today.slice(0, 7)));
+  html += '<main class="stack">' + banners();
+
+  if (options.length > 1) {
+    html += '<div class="row" role="group" aria-label="Colour the calendar by">' +
+      options.map(function (o) { return seg('colourBy', o[0], o[1], o[0] === active); }).join('') + '</div>';
+  }
+
+  html += '<section class="card"><div class="weekdays">' +
+    DAYS.map(function (n) { return '<span>' + n.slice(0, 3) + '</span>'; }).join('') + '</div><div class="cal mt10">';
+  for (var b = 0; b < parseIso(start).getDay(); b++) html += '<span></span>';
+  for (var iso = start; iso <= end; iso = addDays(iso, 1)) {
+    var level = levels[iso];
+    html += '<button class="day' + (level ? ' l' + level : '') + (iso === today ? ' today' : '') + '" data-act="openDay" data-date="' + iso + '"' +
+      (iso > today ? ' disabled' : '') + ' aria-label="' + dayMonth(iso) + '">' + parseIso(iso).getDate() + '</button>';
+  }
+  html += '</div>';
+  if (active) {
+    html += '<div class="legend cap mt12"><span>' + (active === 'mood' ? 'Low' : 'Less') + '</span><span aria-hidden="true">' +
+      [1, 2, 3, 4, 5].map(function (n) { return '<i style="background:var(--r' + n + ')"></i> '; }).join('') +
+      '</span><span>' + (active === 'mood' ? 'Great' : 'More') + '</span></div>';
+  }
+  html += '</section><h2 class="label mt4">Recent days</h2>';
+
+  var recent = [];
+  for (var i = 0; i < 30 && recent.length < 10; i++) {
+    var day = addDays(today, -i), digest = dayDigest(day);
+    if (digest) recent.push([day, digest]);
+  }
+  if (!recent.length) html += '<p class="cap">Nothing logged in the last 30 days. Entries you add on the Today tab will appear here.</p>';
+  recent.forEach(function (r) {
+    html += '<button class="card" data-act="openDay" data-date="' + r[0] + '"><div class="strong">' + shortDay(r[0]) +
+      '</div><div class="cap mt4">' + esc(r[1]) + '</div></button>';
+  });
+  return html + '</main>';
+}
+
+/* ----------------------------------------------------------------- summary */
+
+function periodRange(period, anchor) {
+  if (period === 'day') return [anchor, anchor];
+  if (period === 'month') return [monthStart(anchor.slice(0, 7)), monthEnd(anchor.slice(0, 7))];
+  var start = sundayOf(anchor);
+  return [start, addDays(start, 6)];
+}
+function shiftAnchor(period, anchor, dir) {
+  if (period === 'day') return addDays(anchor, dir);
+  if (period === 'month') return monthStart(addMonths(anchor.slice(0, 7), dir));
+  return addDays(anchor, 7 * dir);
+}
+function dayStats(start, end) {
+  var out = [];
+  for (var iso = start; iso <= end; iso = addDays(iso, 1)) {
+    var s = state.sleeps.find(function (e) { return e.localDate === iso; });
+    var m = state.moods.find(function (e) { return e.localDate === iso; });
+    out.push({ date: iso, sleep: s ? s.durationMinutes : null, mood: m ? m.level : null });
+  }
+  return out;
+}
+/* The numbers the app works out by itself for a period. */
+function figures(start, end) {
+  var inRange = function (e) { return e.localDate >= start && e.localDate <= end; };
+  var sleeps = state.sleeps.filter(inRange).map(function (e) { return e.durationMinutes; });
+  var moods = state.moods.filter(inRange).map(function (e) { return e.level; });
+  var weights = sortedWeights().filter(inRange);
+  var acts = state.activities.filter(inRange);
+  var activeDays = {};
+  acts.forEach(function (a) { activeDays[a.localDate] = 1; });
+  var change = weights.length > 1 ? Math.round((weights[weights.length - 1].kg - weights[0].kg) * 10) / 10 : null;
+  return {
+    sleepAvg: sleeps.length ? Math.round(average(sleeps)) : null,
+    moodAvg: moods.length ? average(moods) : null,
+    weights: weights, weightChange: change,
+    meals: state.meals.filter(inRange).length,
+    activeDays: Object.keys(activeDays).length,
+    activityMinutes: acts.reduce(function (a, e) { return a + e.durationMinutes; }, 0)
+  };
+}
+function changeText(change) {
+  if (change > 0) return 'Up ' + fmtKg(change);
+  if (change < 0) return 'Down ' + fmtKg(-change);
+  return 'No change';
+}
+function figureRows(period, f) {
+  var rows = [], isDay = period === 'day';
+  if (isOn(KEYS.SLEEP)) rows.push([isDay ? 'Sleep' : 'Average sleep', f.sleepAvg == null ? 'No entries' : fmtDuration(f.sleepAvg)]);
+  if (isOn(KEYS.MOOD)) {
+    rows.push([isDay ? 'Mood' : 'Average mood', f.moodAvg == null ? 'No entries'
+      : isDay ? MOODS[Math.round(f.moodAvg) - 1] : fmt1(f.moodAvg) + ' out of 5']);
+  }
+  if (isOn(KEYS.WEIGHT)) {
+    rows.push(f.weights.length > 1 ? ['Weight, first to last weigh-in', changeText(f.weightChange)]
+      : ['Weight', f.weights.length ? fmtKg(f.weights[0].kg) : 'No weigh-ins']);
+  }
+  if (isOn(KEYS.FOOD)) rows.push(['Meals logged', String(f.meals)]);
+  if (isOn(KEYS.ACTIVITY)) {
+    rows.push(isDay ? ['Activity', f.activityMinutes + ' min'] : ['Active days', f.activeDays + ', ' + f.activityMinutes + ' min in total']);
+  }
+  return rows;
+}
+function barHeight(minutes, stats) {
+  var longest = Math.max.apply(null, stats.map(function (s) { return s.sleep || 0; }));
+  return Math.max(4, Math.round(112 * minutes / Math.max(600, longest)));
+}
+function weekChart(stats, showSleep, showMood) {
+  var slept = stats.filter(function (s) { return s.sleep != null; }).map(function (s) { return s.sleep; });
+  var lowest = slept.length >= 2 ? Math.min.apply(null, slept) : null;
+  return '<div class="week">' + stats.map(function (s) {
+    var low = s.sleep != null && s.sleep === lowest;
+    var col = '<div class="col">';
+    if (showSleep) {
+      col += '<span' + (low ? ' class="strong" style="color:var(--ink)"' : '') + '>' + (s.sleep != null ? fmt1(s.sleep / 60) : '–') + '</span>' +
+        '<div class="bar-box">' + (s.sleep != null ? '<div class="bar' + (low ? ' low' : '') + '" style="height:' + barHeight(s.sleep, stats) + 'px"></div>' : '') + '</div>';
+    }
+    if (showMood) col += '<span class="mood-dot' + (s.mood ? ' l' + s.mood : '') + '">' + (s.mood || '–') + '</span>';
+    return col + '<span>' + shortWeekday(s.date) + '</span></div>';
+  }).join('') + '</div>';
+}
+function monthChart(stats, showSleep, showMood) {
+  return '<div class="month">' + stats.map(function (s) {
+    var col = '<div class="col">';
+    if (showSleep) col += '<div class="bar-box">' + (s.sleep != null ? '<div class="bar" style="height:' + barHeight(s.sleep, stats) + 'px"></div>' : '') + '</div>';
+    if (showMood) col += '<span class="pip" style="background:' + (s.mood ? 'var(--r' + s.mood + ')' : 'transparent') + '"></span>';
+    return col + '</div>';
+  }).join('') + '</div><div class="spread cap mt8"><span>' + shortDate(stats[0].date) + '</span><span>' +
+    shortDate(stats[Math.floor(stats.length / 2)].date) + '</span><span>' + shortDate(stats[stats.length - 1].date) + '</span></div>';
+}
+
+function viewSummary() {
+  var today = todayIso(), range = periodRange(ui.period, ui.anchor), start = range[0], end = range[1];
+  var stats = dayStats(start, end), f = figures(start, end);
+  var showSleep = isOn(KEYS.SLEEP), showMood = isOn(KEYS.MOOD);
+  // Have a day's meal photos ready, so Share can send them the moment it is tapped.
+  var dayPhotos = ui.period === 'day' ? dayPhotoNames(start) : [];
+  dayPhotos.forEach(Photos.load);
+
+  var html = header(rangeLabel(start, end), 'Summary', '',
+    iconBtn('periodPrev', 'left', 'Previous period') + iconBtn('periodNext', 'right', 'Next period', end >= today));
+  html += '<main class="stack">' + banners();
+  html += '<div class="row" role="group" aria-label="Summary period">' +
+    seg('period', 'day', 'Day', ui.period === 'day') + seg('period', 'week', 'Week', ui.period === 'week') +
+    seg('period', 'month', 'Month', ui.period === 'month') + '</div>';
+
+  if (ui.period !== 'day' && (showSleep || showMood)) {
+    var hasData = stats.some(function (s) { return s.sleep != null || s.mood != null; });
+    html += '<section class="card"><h2 class="label">' + (showSleep && showMood ? 'Sleep and mood' : showSleep ? 'Sleep' : 'Mood') + '</h2><div class="mt10">' +
+      (!hasData ? '<p class="cap">No sleep or mood entries in this period yet.</p>'
+        : ui.period === 'week' ? weekChart(stats, showSleep, showMood) : monthChart(stats, showSleep, showMood)) +
+      '</div><p class="cap mt10">' +
+      (showSleep && showMood ? 'Bars show hours of sleep. Circles show mood from 1 (low) to 5 (great).'
+        : showSleep ? 'Bars show hours of sleep.' : 'Circles show mood from 1 (low) to 5 (great).') + '</p></section>';
+  }
+
+  var rows = figureRows(ui.period, f);
+  html += '<section class="card flush"><h2 class="label pad">In numbers</h2>' +
+    (rows.length ? rows.map(function (r) {
+      return '<div class="fig"><span class="grow">' + r[0] + '</span><span class="strong">' + esc(r[1]) + '</span></div>';
+    }).join('') : '<p class="cap" style="padding:0 14px 14px">All trackers are switched off.</p>') + '</section>';
+
+  html += '<section class="card"><h2 class="label">Summary from Claude</h2>' +
+    '<p class="mt8">Share this period as a report. It contains your entries, the figures above and instructions, so Claude can write what stood out and what is worth trying.</p>' +
+    '<div class="row mt12">' + (PREVIEW ? '' : '<button class="btn primary" data-act="shareReport">Share report</button>') +
+    '<button class="btn' + (PREVIEW ? ' primary' : '') + '" data-act="copyReport">Copy report</button></div>' +
+    '<p class="cap mt10">Open the Claude app, attach or paste the report, and send it.' +
+    (dayPhotos.length && !PREVIEW ? ' This day\'s meal photos are sent along with it where the phone allows.' : '') + '</p></section>';
+  return html + '</main>';
+}
+
+/* The Markdown report: instructions for Claude first, then figures, then every entry. */
+function dayPhotoNames(iso) {
+  return isOn(KEYS.FOOD) ? state.meals.filter(function (m) { return m.localDate === iso && photoOf(m); }).map(photoOf) : [];
+}
+/* attached: names of the photo files being sent together with the report, if any. */
+function buildReport(attached) {
+  attached = attached || [];
+  var range = periodRange(ui.period, ui.anchor), start = range[0], end = range[1];
+  var f = figures(start, end), year = parseIso(end).getFullYear();
+  var prevEnd = addDays(start, -1), prevStart = periodRange(ui.period, prevEnd)[0];
+  var prev = figures(prevStart, prevEnd);
+  var L = [];
+  L.push('# Life Diary report: ' + rangeLabel(start, end) + ' ' + year + ' (' + ui.period + ')', '');
+  L.push('## Instructions for Claude', '');
+  L.push('This is an export from my personal diary app. Please write a summary of this period for me.', '');
+  L.push('- Start with a section called "What stood out": three to five sentences in plain, friendly language about patterns in the data, for example how sleep, mood, food, activity and weight moved together.');
+  L.push('- Then a section called "Worth trying": one to three small, concrete suggestions that follow from those patterns.');
+  L.push('- Use only the figures and entries below. Do not invent numbers. If there is too little data to see a pattern, say so plainly.');
+  L.push('- Do not diagnose or give medical advice. If something looks worth raising with a doctor, say that in one sentence.');
+  if (attached.length) L.push('- Photos of some meals are attached; each meal below names its photo file. Use them to see what was eaten where the text says little.');
+  L.push('- Keep the whole summary under about 200 words. I may ask follow-up questions afterwards.', '');
+  L.push('Mood is recorded on a scale from 1 (low) to 5 (great). Sleep is the time slept the night before each date. Weeks run Sunday to Saturday.', '');
+
+  L.push('## Figures calculated by the app', '');
+  figureRows(ui.period, f).forEach(function (r) { L.push('- ' + r[0] + ': ' + r[1]); });
+  var prevRows = figureRows(ui.period, prev);
+  if (prevRows.length) {
+    L.push('', 'Previous ' + ui.period + ' (' + rangeLabel(prevStart, prevEnd) + '), for comparison:', '');
+    prevRows.forEach(function (r) { L.push('- ' + r[0] + ': ' + r[1]); });
+  }
+
+  L.push('', '## Entries', '');
+  for (var iso = start; iso <= end; iso = addDays(iso, 1)) {
+    var lines = reportDay(iso, attached);
+    L.push('### ' + weekdayName(iso) + ' ' + dayMonth(iso), '');
+    if (lines.length) lines.forEach(function (l) { L.push(l); }); else L.push('- No entries');
+    L.push('');
+  }
+  return L.join('\n');
+}
+function reportDay(iso, attached) {
+  var out = [], on = function (e) { return e.localDate === iso; };
+  var mood = state.moods.find(on);
+  if (mood && isOn(KEYS.MOOD)) out.push('- Mood: ' + MOODS[mood.level - 1] + ' (' + mood.level + '/5)');
+  var sleep = state.sleeps.find(on);
+  if (sleep && isOn(KEYS.SLEEP)) out.push('- Sleep: ' + fmtDuration(sleep.durationMinutes));
+  if (isOn(KEYS.WEIGHT)) sortedWeights().filter(on).forEach(function (w) { out.push('- Weight: ' + fmtKg(w.kg) + ' at ' + timeOf(w.measuredAt, w.zoneOffset)); });
+  if (isOn(KEYS.FOOD)) {
+    state.meals.filter(on).sort(function (a, b) { return a.eatenAt - b.eatenAt; })
+      .forEach(function (m) {
+        var photo = photoOf(m);
+        var note = !photo ? '' : attached.indexOf(photo) >= 0 ? ' [photo attached: ' + photo + ']' : ' [has a photo in the diary, not attached]';
+        out.push('- Meal at ' + timeOf(m.eatenAt, m.zoneOffset) + ': ' + (m.text ? oneLine(m.text) : '(no description)') + note);
+      });
+  }
+  if (isOn(KEYS.ACTIVITY)) state.activities.filter(on).forEach(function (a) { out.push('- Activity: ' + oneLine(a.name) + ', ' + a.durationMinutes + ' min'); });
+  state.notes.filter(on).forEach(function (n) {
+    if (n.kind === 'dream' && isOn(KEYS.DREAMS)) out.push('- Dream: ' + oneLine(n.text));
+    if (n.kind === 'thought' && isOn(KEYS.THOUGHTS)) out.push('- Thoughts: ' + oneLine(n.text));
+  });
+  state.customTrackers.filter(function (t) { return t.enabled; }).forEach(function (t) {
+    var v = state.customValues.find(function (x) { return x.trackerId === t.id && x.localDate === iso; });
+    if (!v) return;
+    var text = t.type === 'text' ? oneLine(v.textValue || '') : t.type === 'yes_no' ? (v.numberValue === 1 ? 'yes' : 'no')
+      : t.type === 'scale_1_5' ? v.numberValue + '/5' : fmtNumber(v.numberValue) + (t.unit ? ' ' + t.unit : '');
+    out.push('- ' + oneLine(t.name) + ': ' + text);
+  });
+  return out;
+}
+function oneLine(s) { return String(s).replace(/\s*\n+\s*/g, ' / ').trim(); }
+
+/* ---------------------------------------------------------------- trackers */
+
+function viewTrackers() {
+  var html = header('Choose what you log', 'Trackers') + '<main class="stack">' + banners();
+
+  html += '<section class="card flush" aria-label="Trackers">';
+  BUILT_IN.forEach(function (t) {
+    html += '<div class="item"><span class="grow"><span class="title">' + t[1] + '</span><br><span class="sub">' + t[2] + '</span></span>' +
+      switchBtn('toggle', t[0], t[1] + ' tracker', isOn(t[0])) + '</div>';
+  });
+  state.customTrackers.forEach(function (t) {
+    var type = (TRACKER_TYPES.find(function (x) { return x[0] === t.type; }) || TRACKER_TYPES[0])[1];
+    html += '<div class="item"><button class="grow" data-act="editTracker" data-id="' + t.id + '" style="border:0;background:none;padding:0;text-align:left">' +
+      '<span class="title">' + esc(t.name) + '</span><br><span class="sub">' + type + (t.unit ? ', in ' + esc(t.unit) : '') + '. Tap to rename or delete</span></button>' +
+      switchBtn('toggleCustom', t.id, t.name + ' tracker', t.enabled) + '</div>';
+  });
+  html += '<button class="item accent" data-act="addTracker"><span class="title">Add your own tracker</span></button></section>';
+
+  html += '<section class="card flush" aria-label="Google Drive"><h2 class="label pad">Google Drive (optional)</h2>' + driveCard() + '</section>';
+
+  var lastBackup = lsGet('ld.lastBackup', 0);
+  html += '<section class="card flush" aria-label="Backup">' + (PREVIEW ? '' :
+    '<button class="item" data-act="backup"><span class="grow"><span class="title">Back up diary</span><br><span class="sub">Save everything to a file. Last backup: ' + agoLabel(lastBackup) + '</span></span>' + ICON.chev + '</button>') +
+    '<button class="item" data-act="restore"><span class="grow"><span class="title">Restore from backup</span><br><span class="sub">Replace this diary with a backup file</span></span>' + ICON.chev + '</button>' +
+    (previousState ? '<button class="item" data-act="undoReplace"><span class="grow"><span class="title">Undo last replace</span><br><span class="sub">Bring back the diary as it was before the last restore or Drive download</span></span>' + ICON.chev + '</button>' : '') +
+    '</section>';
+
+  html += '<p class="cap">Your diary is stored on this device' + (Drive.linked() ? ' and in your Google Drive' : '') +
+    '. Version 0.1.</p>';
+  return html + '</main>';
+}
+function driveCard() {
+  var pad14 = 'padding:4px 14px 14px';
+  if (PREVIEW) return '<p class="cap" style="' + pad14 + '">Not available in this preview. It works once the app is hosted at its own address.</p>';
+  if (!Drive.configured()) {
+    return '<p class="cap" style="' + pad14 + '">Not set up on this copy of the app. Whoever hosts it needs to add a Google client ID first (see the README).</p>';
+  }
+  if (!Drive.linked()) {
+    return '<div style="' + pad14 + '"><p>Keep a copy of your diary in your own Google Drive, so it survives a lost phone or cleared browser data. The app can only see the one file it creates.</p>' +
+      '<button class="btn primary block mt12" data-act="driveConnect">Connect Google Drive</button></div>';
+  }
+  var m = Drive.meta();
+  var status = Drive.busy() ? 'Syncing…'
+    : Drive.needsSignIn() ? 'Paused: sign in to sync'
+    : Drive.hasConflict() ? 'Two versions: tap Sync now to choose one'
+    : Drive.error() ? 'Last sync failed: ' + Drive.error()
+    : 'Last synced ' + agoLabel(m.lastSyncAt) + (m.dirty ? ', changes waiting' : '');
+  return '<div style="' + pad14 + '"><p><span class="strong">' + (m.email ? 'Connected as ' + esc(m.email) : 'Connected') + '</span><br><span class="cap">' + esc(status) + '</span></p>' +
+    '<div class="row mt12"><button class="btn primary" data-act="' + (Drive.needsSignIn() ? 'driveConnect' : 'driveSync') + '"' + (Drive.busy() ? ' disabled' : '') + '>' +
+    (Drive.needsSignIn() ? 'Sign in' : 'Sync now') + '</button><button class="btn" data-act="driveDisconnect">Disconnect</button></div></div>' +
+    '<div class="item sep"><span class="grow"><span class="title">Sign in when the app opens</span><br><span class="sub">Google sign-ins last about an hour. With this on, the app renews it at start so syncing needs no taps.</span></span>' +
+    switchBtn('driveAuto', 'auto', 'Sign in when the app opens', m.auto) + '</div>';
+}
+
+/* ------------------------------------------------------------------ weight */
+
+function rollingAverage(all, iso) {
+  var from = addDays(iso, -6);
+  var win = all.filter(function (w) { return w.localDate >= from && w.localDate <= iso; });
+  return win.length ? average(win.map(function (w) { return w.kg; })) : null;
+}
+function viewWeight() {
+  var today = todayIso(), all = sortedWeights();
+  var days = (RANGES.find(function (r) { return r[0] === ui.weightRange; }) || RANGES[1])[2];
+  var start = addDays(today, -(days - 1));
+  var inRange = all.filter(function (w) { return w.localDate >= start && w.localDate <= today; });
+  var avgDates = inRange.map(function (w) { return w.localDate; }).filter(function (d, i, a) { return a.indexOf(d) === i; });
+  var averages = avgDates.map(function (d) { return { date: d, kg: rollingAverage(all, d) }; });
+  var latest = all[all.length - 1];
+  var latestAvg = latest ? rollingAverage(all, latest.localDate) : null;
+
+  var html = header(rangeLabel(start, today), 'Weight', iconBtn('weightBack', 'back', 'Back to Today'));
+  html += '<main class="stack"><div class="row" role="group" aria-label="Time range">' +
+    RANGES.map(function (r) { return seg('weightRange', r[0], r[1], r[0] === ui.weightRange); }).join('') + '</div>';
+
+  var changeLine = 'Needs weigh-ins on two days';
+  if (averages.length >= 2) {
+    var change = Math.round((averages[averages.length - 1].kg - averages[0].kg) * 10) / 10;
+    changeLine = changeText(change) + ' since ' + shortDate(averages[0].date);
+  }
+  html += '<section class="card"><div class="row wide"><div><div class="label">Latest</div><div class="big">' + (latest ? fmtKg(latest.kg) : 'None yet') +
+    '</div><div class="cap">' + (latest ? relativeDay(latest.localDate, today, timeOf(latest.measuredAt, latest.zoneOffset)) : 'Add your first weigh-in') +
+    '</div></div><div><div class="label">7-day average</div><div class="big">' + (latestAvg != null ? fmtKg(latestAvg) : '–') +
+    '</div><div class="cap">' + changeLine + '</div></div></div></section>';
+
+  html += '<section class="card"><h2 class="label">Trend</h2><div class="mt10">' +
+    (inRange.length ? trendChart(start, today, inRange, averages) + '<p class="cap mt8">Dots are single weigh-ins. The line is the 7-day average.</p>'
+      : '<p class="cap">No weigh-ins in this period yet.</p>') + '</div></section>';
+
+  if (inRange.length) {
+    html += '<section class="card flush"><h2 class="label pad">Weigh-ins</h2>' + inRange.slice().reverse().map(function (w) {
+      return '<button class="item" style="min-height:48px" data-act="editWeight" data-id="' + w.id + '"><span class="grow">' + shortDay(w.localDate) + ', ' +
+        timeOf(w.measuredAt, w.zoneOffset) + '</span><span class="strong">' + fmtKg(w.kg) + '</span></button>';
+    }).join('') + '</section>';
+  }
+  return html + '<button class="btn primary block" data-act="addWeight">Add weigh-in</button></main>';
+}
+function trendChart(start, end, dots, averages) {
+  var values = dots.map(function (w) { return w.kg; }).concat(averages.map(function (a) { return a.kg; }));
+  var low = Math.floor(Math.min.apply(null, values) - 0.2), high = Math.ceil(Math.max.apply(null, values) + 0.2);
+  if (high - low < 1) high = low + 1;
+  var span = daysBetween(start, end);
+  var x = function (iso) { return 44 + (span <= 0 ? 0.5 : daysBetween(start, iso) / span) * 278; };
+  var y = function (kg) { return 14 + (1 - (kg - low) / (high - low)) * 132; };
+  var svg = '<svg role="img" aria-label="Weight trend from ' + shortDate(start) + ' to ' + shortDate(end) + '" viewBox="0 0 330 172" style="width:100%;height:auto">' +
+    '<g stroke="#E8ECEA" stroke-width="1"><path d="M40 14H326"/><path d="M40 80H326"/><path d="M40 146H326"/></g>' +
+    '<g fill="#56625C" font-size="12" font-family="inherit"><text x="0" y="18">' + fmtNumber(high) + ' kg</text><text x="0" y="84">' + fmtNumber((low + high) / 2) +
+    '</text><text x="0" y="150">' + fmtNumber(low) + '</text><text x="40" y="168">' + shortDate(start) + '</text><text x="326" y="168" text-anchor="end">' + shortDate(end) + '</text></g><g fill="#5E9E8B">';
+  dots.forEach(function (w) { svg += '<circle cx="' + x(w.localDate).toFixed(1) + '" cy="' + y(w.kg).toFixed(1) + '" r="3"/>'; });
+  svg += '</g>';
+  if (averages.length >= 2) {
+    svg += '<polyline fill="none" stroke="#17574A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="' +
+      averages.map(function (a) { return x(a.date).toFixed(1) + ',' + y(a.kg).toFixed(1); }).join(' ') + '"/>';
+  }
+  return svg + '</svg>';
+}
+
+/* ------------------------------------------------------------------ render */
+
+function render() {
+  var view = ui.tab === 'today' ? (ui.showWeight ? viewWeight() : viewToday())
+    : ui.tab === 'history' ? viewHistory() : ui.tab === 'summary' ? viewSummary() : viewTrackers();
+  document.getElementById('app').innerHTML = view;
+  document.getElementById('tabs').innerHTML = [['today', 'Today'], ['history', 'History'], ['summary', 'Summary'], ['trackers', 'Trackers']]
+    .map(function (t) {
+      return '<button class="tab" data-act="tab" data-val="' + t[0] + '"' + (ui.tab === t[0] ? ' aria-current="page"' : '') + '>' + ICON[t[0]] + '<span>' + t[1] + '</span></button>';
+    }).join('');
+}
+
+/* ------------------------------------------------------------------ sheets */
+
+function field(label, input) { return '<label class="field">' + esc(label) + input + '</label>'; }
+
+/* Opens a pop-up form. onSubmit receives the form's values; return false to keep it open. */
+function openSheet(opts) {
+  sheet = opts;
+  var buttons = (opts.extraLabel ? '<button type="button" class="btn danger" data-act="sheetExtra">' + esc(opts.extraLabel) + '</button>' : '') +
+    '<button type="button" class="btn plain" data-act="closeSheet">' + (opts.onSubmit ? 'Cancel' : 'Close') + '</button>' +
+    (opts.onSubmit ? '<button type="submit" class="btn primary">' + esc(opts.saveLabel || 'Save') + '</button>' : '');
+  document.getElementById('sheet-root').innerHTML = '<div class="scrim" data-act="closeSheet"></div>' +
+    '<form class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" novalidate><h2 id="sheet-title">' + esc(opts.title) + '</h2>' +
+    opts.body + '<div class="sheet-actions">' + buttons + '</div></form>';
+  pushNav();
+  var first = document.querySelector('.sheet input, .sheet textarea');
+  if (first && opts.autofocus !== false) first.focus();
+}
+function dropSheet() {
+  var closing = sheet;
+  sheet = null;
+  document.getElementById('sheet-root').innerHTML = '';
+  if (closing && closing.onClose) closing.onClose();
+}
+function closeSheet() { if (sheet) { dropSheet(); leaveNav(); } }
+
+document.addEventListener('submit', function (e) {
+  e.preventDefault();
+  if (!sheet || !sheet.onSubmit) return;
+  var form = e.target;
+  if (!form.checkValidity()) { form.reportValidity(); return; }
+  var data = {};
+  new FormData(form).forEach(function (v, k) { data[k] = String(v); });
+  if (sheet.onSubmit(data) !== false) closeSheet();
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+  if (viewerOpen) closeViewer(); else if (sheet) closeSheet();
+});
+
+function confirmSheet(title, message, label, onConfirm) {
+  openSheet({ title: title, body: '<p>' + esc(message) + '</p>', saveLabel: label, autofocus: false, onSubmit: function () { onConfirm(); } });
+}
+
+function sleepSheet() {
+  var d = ui.date, cur = state.sleeps.find(function (e) { return e.localDate === d; });
+  openSheet({
+    title: 'Sleep',
+    body: '<p class="cap">How long did you sleep last night?</p><div class="row wide">' +
+      field('Hours', '<input name="h" type="number" inputmode="numeric" min="0" max="23" step="1" required value="' + (cur ? Math.floor(cur.durationMinutes / 60) : '') + '">') +
+      field('Minutes', '<input name="m" type="number" inputmode="numeric" min="0" max="59" step="1" value="' + (cur ? cur.durationMinutes % 60 : '') + '">') + '</div>',
+    extraLabel: cur ? 'Clear' : null,
+    onExtra: function () { removeFrom('sleeps', cur); commit(); },
+    onSubmit: function (v) {
+      var minutes = Number(v.h) * 60 + Number(v.m || 0);
+      if (!(minutes > 0)) { toast('Enter how long you slept'); return false; }
+      if (cur) removeFrom('sleeps', cur);
+      state.sleeps.push({ localDate: d, durationMinutes: minutes, source: 'manual', recordedAt: Date.now(), zoneOffset: currentOffset() });
+      commit();
+    }
+  });
+}
+function mealSheet(id) {
+  var d = ui.date, cur = id ? byId(state.meals, id) : null;
+  var form = {
+    title: cur ? 'Edit meal' : 'Add a meal',
+    photoName: photoOf(cur),   // a picture already stored for this meal
+    photoNew: null,            // a picture just chosen, not stored until Save
+    body: field('What did you eat?', '<textarea name="text" style="min-height:88px">' + esc(cur ? cur.text : '') + '</textarea>') +
+      '<div id="meal-photo"></div><input id="meal-photo-input" type="file" accept="image/*" hidden>' +
+      field('Time', '<input name="time" type="time" required value="' + (cur ? timeOf(cur.eatenAt, cur.zoneOffset) : nowHHMM()) + '">'),
+    extraLabel: cur ? 'Delete' : null,
+    onExtra: function () { removeFrom('meals', cur); commit(); },
+    onSubmit: function (v) {
+      var text = v.text.trim(), photo = form.photoName;
+      if (!text && !photo && !form.photoNew) { toast('Write what you ate or add a photo'); return false; }
+      if (form.photoNew) {
+        photo = Photos.newName();
+        Photos.add(photo, form.photoNew).then(function (ok) {
+          if (!ok) toast('The photo could not be stored: this browser has no room left');
+        });
+      }
+      // A path written by the Android app is kept as it is.
+      var keptPath = cur && cur.photoPath && !photoOf(cur) ? cur.photoPath : null;
+      var offset = cur ? cur.zoneOffset : currentOffset();
+      var entry = { id: cur ? cur.id : nextId(state.meals), localDate: d, eatenAt: toEpoch(d, v.time, offset), zoneOffset: offset, text: text, photoPath: photo || keptPath };
+      if (cur) removeFrom('meals', cur);
+      state.meals.push(entry);
+      commit();
+    }
+  };
+  openSheet(form);
+  paintMealPhoto();
+}
+/* Draws the photo part of the meal form without touching what has been typed. */
+function paintMealPhoto() {
+  var box = document.getElementById('meal-photo');
+  if (!box || !sheet) return;
+  var has = !!(sheet.photoNew || sheet.photoName);
+  var img = sheet.photoNew ? 'src="' + sheet.photoNew + '"'
+    : sheet.photoName ? 'data-photo="' + esc(sheet.photoName) + '" src="' + Photos.src(sheet.photoName) + '"' : '';
+  box.innerHTML = (has ? '<button type="button" class="photo-btn" data-act="viewPhoto" aria-label="Show the photo full size"><img class="photo-preview" ' + img + ' alt="Photo of this meal"></button>' : '') +
+    '<div class="row' + (has ? ' mt8' : '') + '"><button type="button" class="btn" data-act="mealPhotoPick">' + (has ? 'Change photo' : 'Add a photo') + '</button>' +
+    (has ? '<button type="button" class="btn danger" data-act="mealPhotoRemove">Remove photo</button>' : '') + '</div>';
+}
+document.addEventListener('change', function (e) {
+  if (e.target.id !== 'meal-photo-input') return;
+  var file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  shrinkImage(file).then(function (url) {
+    if (sheet && document.getElementById('meal-photo')) { sheet.photoNew = url; paintMealPhoto(); }
+  }, function () { toast('That file could not be read as a picture'); });
+});
+function activitySheet() {
+  var d = ui.date, seen = {}, recent = [];
+  state.activities.slice().sort(function (a, b) { return b.recordedAt - a.recordedAt; }).forEach(function (a) {
+    if (!seen[a.name] && recent.length < 6) { seen[a.name] = 1; recent.push(a.name); }
+  });
+  openSheet({
+    title: 'Add an activity',
+    body: field('What did you do?', '<input name="name" type="text" required autocomplete="off">') +
+      (recent.length ? '<div class="chips">' + recent.map(function (n) { return '<button type="button" class="seg" data-act="pickActivity" data-val="' + esc(n) + '" aria-pressed="false">' + esc(n) + '</button>'; }).join('') + '</div>' : '') +
+      field('Minutes', '<input name="minutes" type="number" inputmode="numeric" min="1" max="1440" step="1" required>'),
+    onSubmit: function (v) {
+      if (!v.name.trim()) { toast('Write what you did'); return false; }
+      state.activities.push({ id: nextId(state.activities), localDate: d, recordedAt: Date.now(), zoneOffset: currentOffset(), name: v.name.trim(), durationMinutes: Number(v.minutes) });
+      commit();
+    }
+  });
+}
+function noteSheet(kind) {
+  var d = ui.date, cur = state.notes.find(function (n) { return n.localDate === d && n.kind === kind; });
+  openSheet({
+    title: kind === 'dream' ? 'Dream' : 'Thoughts',
+    body: field(kind === 'dream' ? 'What do you remember?' : 'How was the day?', '<textarea name="text">' + esc(cur ? cur.text : '') + '</textarea>'),
+    onSubmit: function (v) {
+      var now = Date.now(), text = v.text.trim();
+      if (cur) removeFrom('notes', cur);
+      if (text) {
+        state.notes.push({ id: cur ? cur.id : nextId(state.notes), localDate: d, kind: kind, text: text, recordedAt: cur ? cur.recordedAt : now, updatedAt: now, zoneOffset: cur ? cur.zoneOffset : currentOffset() });
+      }
+      if (cur || text) commit();
+    }
+  });
+}
+function setCustomValue(tracker, number, text) {
+  var d = ui.date, cur = state.customValues.find(function (v) { return v.trackerId === tracker.id && v.localDate === d; });
+  if (cur) removeFrom('customValues', cur);
+  if (number != null || text) {
+    state.customValues.push({ id: cur ? cur.id : nextId(state.customValues), trackerId: tracker.id, localDate: d, recordedAt: Date.now(), zoneOffset: currentOffset(), numberValue: number, textValue: text || null });
+  }
+  commit();
+}
+function customNumberSheet(id) {
+  var t = byId(state.customTrackers, id), d = ui.date;
+  var cur = state.customValues.find(function (v) { return v.trackerId === t.id && v.localDate === d; });
+  openSheet({
+    title: t.name,
+    body: field(t.unit ? 'Value in ' + t.unit : 'Value', '<input name="value" type="text" inputmode="decimal" required value="' + (cur && cur.numberValue != null ? fmtNumber(cur.numberValue) : '') + '">'),
+    extraLabel: cur ? 'Clear' : null,
+    onExtra: function () { setCustomValue(t, null, null); },
+    onSubmit: function (v) {
+      var n = parseNumber(v.value);
+      if (n == null) { toast('Enter a number'); return false; }
+      setCustomValue(t, n, null);
+    }
+  });
+}
+function customTextSheet(id) {
+  var t = byId(state.customTrackers, id), d = ui.date;
+  var cur = state.customValues.find(function (v) { return v.trackerId === t.id && v.localDate === d; });
+  openSheet({
+    title: t.name,
+    body: field('Write here', '<textarea name="text">' + esc(cur ? cur.textValue || '' : '') + '</textarea>'),
+    onSubmit: function (v) { setCustomValue(t, null, v.text.trim()); }
+  });
+}
+function weightSheet(id) {
+  var cur = id ? byId(state.weights, id) : null;
+  openSheet({
+    title: cur ? 'Edit weigh-in' : 'Add weigh-in',
+    body: field('Weight in kg', '<input name="kg" type="text" inputmode="decimal" required value="' + (cur ? fmt1(cur.kg) : '') + '">') +
+      '<div class="row wide">' + field('Date', '<input name="date" type="date" required max="' + todayIso() + '" value="' + (cur ? cur.localDate : todayIso()) + '">') +
+      field('Time', '<input name="time" type="time" required value="' + (cur ? timeOf(cur.measuredAt, cur.zoneOffset) : nowHHMM()) + '">') + '</div>',
+    extraLabel: cur ? 'Delete' : null,
+    onExtra: function () { removeFrom('weights', cur); commit(); },
+    onSubmit: function (v) {
+      var kg = parseNumber(v.kg);
+      if (kg == null || kg <= 20 || kg >= 400) { toast('Enter a weight in kg'); return false; }
+      if (v.date > todayIso()) { toast('The date cannot be in the future'); return false; }
+      var offset = cur ? cur.zoneOffset : currentOffset();
+      var entry = { id: cur ? cur.id : nextId(state.weights), localDate: v.date, measuredAt: toEpoch(v.date, v.time, offset), zoneOffset: offset, kg: kg, source: cur ? cur.source : 'manual' };
+      if (cur) removeFrom('weights', cur);
+      state.weights.push(entry);
+      commit();
+    }
+  });
+}
+function trackerSheet(id) {
+  var cur = id ? byId(state.customTrackers, id) : null;
+  var typeName = cur ? (TRACKER_TYPES.find(function (x) { return x[0] === cur.type; }) || TRACKER_TYPES[0])[1] : '';
+  openSheet({
+    title: cur ? 'Edit tracker' : 'Add your own tracker',
+    body: field('Name, for example Coffee or Reading', '<input name="name" type="text" required autocomplete="off" value="' + esc(cur ? cur.name : '') + '">') +
+      (cur ? '<p class="cap">Type: ' + typeName + '</p>'
+        : '<div class="field">What kind of value?<div class="row">' + TRACKER_TYPES.slice(0, 2).map(typeRadio).join('') + '</div><div class="row">' + TRACKER_TYPES.slice(2).map(typeRadio).join('') + '</div></div>') +
+      (!cur || cur.type === 'number' ? field('Unit (optional), for example cups', '<input name="unit" type="text" autocomplete="off" value="' + esc(cur && cur.unit ? cur.unit : '') + '">') : ''),
+    extraLabel: cur ? 'Delete' : null,
+    onExtra: function () {
+      confirmSheet('Delete ' + cur.name + '?', 'This removes the tracker and everything logged for it. This cannot be undone.', 'Delete', function () {
+        state.customValues = state.customValues.filter(function (v) { return v.trackerId !== cur.id; });
+        removeFrom('customTrackers', cur);
+        commit();
+      });
+    },
+    onSubmit: function (v) {
+      if (!v.name.trim()) { toast('Give the tracker a name'); return false; }
+      var type = cur ? cur.type : (v.type || 'number');
+      var unit = type === 'number' && v.unit && v.unit.trim() ? v.unit.trim() : null;
+      if (cur) { cur.name = v.name.trim(); cur.unit = unit; }
+      else state.customTrackers.push({ id: nextId(state.customTrackers), name: v.name.trim(), type: type, unit: unit, enabled: true, sortOrder: 0 });
+      commit();
+    }
+  });
+}
+function typeRadio(t, i) {
+  return '<label class="seg" style="display:flex;align-items:center;justify-content:center;gap:6px;font-weight:500;color:var(--ink)"><input type="radio" name="type" value="' + t[0] + '"' +
+    (t[0] === 'number' ? ' checked' : '') + ' style="width:auto;min-height:0;margin:0">' + t[1] + '</label>';
+}
+
+/* ------------------------------------------------------- files and sharing */
+
+function isTouch() { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); }
+function isIos() { return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+function isStandalone() { return !!(navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)); }
+
+/* On phones this opens the share sheet (save to Files, send to Claude, etc.); elsewhere it downloads. */
+function saveFile(name, mime, text) {
+  var file = null;
+  try { file = new File([text], name, { type: mime }); } catch (e) { /* older browsers */ }
+  if (file && isTouch() && navigator.canShare && navigator.canShare({ files: [file] })) {
+    return navigator.share({ files: [file], title: name }).then(function () { return true; }, function (err) {
+      if (err && err.name === 'AbortError') return false;
+      download(name, mime, text); return true;
+    });
+  }
+  download(name, mime, text);
+  return Promise.resolve(true);
+}
+/* Sends the report through the phone's share sheet in the richest form it accepts:
+   Markdown file with photos, text file with photos, photos with the text, then the
+   same without photos. Where sharing is not possible, the Markdown file is downloaded. */
+function shareReport(base, photos) {
+  var attached = photos.map(function (f) { return f.name; });
+  var fallback = function () { download(base + '.md', 'text/markdown', buildReport([])); };
+  var tries = [];
+  if (isTouch() && navigator.share && navigator.canShare) {
+    try {
+      var md = function (names) { return new File([buildReport(names)], base + '.md', { type: 'text/markdown' }); };
+      var txt = function (names) { return new File([buildReport(names)], base + '.txt', { type: 'text/plain' }); };
+      if (photos.length) {
+        tries.push({ files: [md(attached)].concat(photos) });
+        tries.push({ files: [txt(attached)].concat(photos) });
+        tries.push({ files: photos, text: buildReport(attached) });
+      }
+      tries.push({ files: [md([])] });
+      tries.push({ files: [txt([])] });
+    } catch (e) { tries = []; }
+    tries.push({ text: buildReport([]) });
+  }
+  for (var i = 0; i < tries.length; i++) {
+    var ok = false;
+    try { ok = navigator.canShare(tries[i]); } catch (e) { ok = false; }
+    if (ok) {
+      tries[i].title = base;
+      return navigator.share(tries[i]).catch(function (err) { if (!err || err.name !== 'AbortError') fallback(); });
+    }
+  }
+  fallback();
+  return Promise.resolve();
+}
+function download(name, mime, text) {
+  var url = URL.createObjectURL(new Blob([text], { type: mime }));
+  var a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+}
+function backupText(photos) {
+  var out = Object.assign({}, state, { exportedAt: Date.now() });
+  if (photos) out.photos = photos;
+  return JSON.stringify(out, null, photos ? 0 : 2);
+}
+function saveBackup(text) {
+  saveFile('life-diary-backup-' + todayIso() + '.json', 'application/json', text).then(function (done) {
+    if (done) { lsSet('ld.lastBackup', Date.now()); render(); }
+  });
+}
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return legacyCopy(text); });
+  }
+  return Promise.resolve(legacyCopy(text));
+}
+function legacyCopy(text) {
+  var ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  var ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  ta.remove();
+  return ok;
+}
+
+document.getElementById('restore-file').addEventListener('change', function (e) {
+  var file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    var parsed;
+    try { parsed = JSON.parse(String(reader.result)); } catch (err) { parsed = null; }
+    if (!parsed || parsed.app !== APP_TAG) { toast('That is not a Life Diary backup file'); return; }
+    var next = normalize(parsed);
+    var photos = parsed.photos && typeof parsed.photos === 'object' ? parsed.photos : {};
+    var photoNames = Object.keys(photos).filter(function (n) { return /^ld-photo-/.test(n) && /^data:image\//.test(String(photos[n])); });
+    confirmSheet('Restore from backup?', 'This diary will be replaced by the backup, which has ' + plural(daysWithEntries(next), 'day', 'days') + ' with entries' +
+      (photoNames.length ? ' and ' + plural(photoNames.length, 'photo', 'photos') : '') + '.', 'Replace', function () {
+      photoNames.forEach(function (n) { Photos.add(n, photos[n]); });
+      next.modifiedAt = Date.now();
+      replaceState(next);
+      Drive.localChanged();
+      toast('Diary restored from backup');
+    });
+  };
+  reader.readAsText(file);
+});
+
+/* ------------------------------------------------------------ Google Drive */
+
+/* Optional sync with one file in the user's own Google Drive. Sign-in uses
+   Google's redirect flow for browser-only apps: the page goes to Google and
+   comes back with a one-hour access token in the address. No server involved. */
+var Drive = (function () {
+  var SCOPE = 'https://www.googleapis.com/auth/drive.file';
+  var FILE_NAME = 'life-diary.json';
+  var API = 'https://www.googleapis.com/drive/v3/';
+  var UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
+  var FOLDER_NAME = 'Life Diary', FOLDER_TYPE = 'application/vnd.google-apps.folder';
+  var blank = { linked: false, email: '', fileId: '', folderId: '', remoteModifiedAt: 0, dirty: false, conflict: false, lastSyncAt: 0, auto: true, lastSilentAt: 0 };
+  var meta = Object.assign({}, blank, lsGet('ld.sync', {}));
+  var token = lsGet('ld.token', null);
+  var busy = false, again = false, lastError = '', timer = null, manual = false, deferred = false;
+
+  function saveMeta() { lsSet('ld.sync', meta); }
+  function tokenValid() { return !!(token && token.expiresAt > Date.now()); }
+  function redirectUri() { return CFG.redirectUri || (location.origin + location.pathname.replace(/index\.html$/, '')); }
+
+  function beginAuth(silent) {
+    var stateToken = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    lsSet('ld.oauth', { state: stateToken, silent: !!silent });
+    var p = { client_id: CLIENT_ID, redirect_uri: redirectUri(), response_type: 'token', scope: SCOPE, include_granted_scopes: 'true', state: stateToken };
+    if (meta.email) p.login_hint = meta.email;
+    if (silent) p.prompt = 'none';
+    var query = Object.keys(p).map(function (k) { return k + '=' + encodeURIComponent(p[k]); }).join('&');
+    Store.flush().then(function () { location.assign('https://accounts.google.com/o/oauth2/v2/auth?' + query); });
+  }
+
+  /* Reads the token (or error) Google put in the address after a sign-in. */
+  function handleReturn() {
+    var hash = location.hash.slice(1);
+    if (!hash || (hash.indexOf('access_token=') < 0 && hash.indexOf('error=') < 0)) return null;
+    var p = {};
+    hash.split('&').forEach(function (kv) { var i = kv.indexOf('='); if (i > 0) p[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1).replace(/\+/g, ' ')); });
+    var pending = lsGet('ld.oauth', null);
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; }
+    lsSet('ld.oauth', null);
+    if (!pending || pending.state !== p.state) return null;
+    if (p.access_token) {
+      token = { value: p.access_token, expiresAt: Date.now() + (Number(p.expires_in) || 3600) * 1000 - 60000 };
+      lsSet('ld.token', token);
+      if (!meta.linked) { meta.linked = true; meta.dirty = !isEmpty(state); }
+      saveMeta();
+      return 'token';
+    }
+    if (!pending.silent) toast(p.error === 'access_denied' ? 'Google sign-in was cancelled' : 'Google sign-in failed: ' + p.error);
+    return 'error';
+  }
+
+  function api(url, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({}, opts.headers, { Authorization: 'Bearer ' + token.value });
+    return fetch(url, opts).then(function (r) {
+      if (r.status === 401) { token = null; lsSet('ld.token', null); var a = new Error('Sign-in expired'); a.auth = true; throw a; }
+      if (!r.ok) { var e = new Error('Google Drive answered ' + r.status); e.status = r.status; throw e; }
+      return r;
+    });
+  }
+  function fetchRemote(id) { return api(API + 'files/' + id + '?alt=media').then(function (r) { return r.json(); }).then(normalize); }
+  function findFile() {
+    var q = encodeURIComponent("name='" + FILE_NAME + "' and trashed=false");
+    return api(API + 'files?q=' + q + '&spaces=drive&orderBy=modifiedTime%20desc&fields=files(id)').then(function (r) { return r.json(); })
+      .then(function (j) { return j.files && j.files.length ? j.files[0].id : ''; });
+  }
+  function upload(id, data) {
+    var body = JSON.stringify(data);
+    if (id) {
+      return api(UPLOAD + '/' + id + '?uploadType=media', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: body }).then(function () { return id; });
+    }
+    var boundary = 'lifediary' + Date.now();
+    var multi = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify({ name: FILE_NAME, mimeType: 'application/json', parents: meta.folderId ? [meta.folderId] : undefined }) +
+      '\r\n--' + boundary + '\r\nContent-Type: application/json\r\n\r\n' + body + '\r\n--' + boundary + '--';
+    return api(UPLOAD + '?uploadType=multipart&fields=id', { method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + boundary }, body: multi })
+      .then(function (r) { return r.json(); }).then(function (j) { return j.id; });
+  }
+  function pushLocal() {
+    var sentAt = state.modifiedAt || (state.modifiedAt = Date.now());
+    return upload(meta.fileId, state).then(function (id) {
+      meta.fileId = id; meta.remoteModifiedAt = sentAt;
+      if (state.modifiedAt === sentAt) meta.dirty = false;
+    });
+  }
+  function adopt(remote) {
+    replaceState(remote);
+    meta.remoteModifiedAt = remote.modifiedAt; meta.dirty = false;
+  }
+
+  function json(r) { return r.json(); }
+  /* Everything the app keeps in Drive goes into one folder, created on first use. */
+  function ensureFolder() {
+    var check = !meta.folderId ? Promise.resolve() : api(API + 'files/' + meta.folderId + '?fields=id,trashed').then(json)
+      .then(function (j) { if (j.trashed) meta.folderId = ''; }, function (e) { if (e.status === 404) meta.folderId = ''; else throw e; });
+    return check.then(function () {
+      if (meta.folderId) return null;
+      var q = encodeURIComponent("name='" + FOLDER_NAME + "' and mimeType='" + FOLDER_TYPE + "' and trashed=false");
+      return api(API + 'files?q=' + q + '&spaces=drive&fields=files(id)').then(json).then(function (j) {
+        if (j.files && j.files.length) { meta.folderId = j.files[0].id; return null; }
+        return api(API + 'files?fields=id', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: FOLDER_NAME, mimeType: FOLDER_TYPE }) })
+          .then(json).then(function (made) { meta.folderId = made.id; });
+      });
+    });
+  }
+  function listPhotos() {
+    var found = {};
+    var q = encodeURIComponent("'" + meta.folderId + "' in parents and trashed=false");
+    function page(tokenParam) {
+      return api(API + 'files?q=' + q + '&spaces=drive&pageSize=1000&fields=nextPageToken,files(id,name)' + tokenParam).then(json).then(function (j) {
+        (j.files || []).forEach(function (f) { if (/^ld-photo-/.test(f.name)) found[f.name] = f.id; });
+        return j.nextPageToken ? page('&pageToken=' + encodeURIComponent(j.nextPageToken)) : found;
+      });
+    }
+    return page('');
+  }
+  function uploadPhoto(name) {
+    return Store.load('photo:' + name).then(function (url) {
+      if (!url) return null;
+      var boundary = 'lifediaryphoto' + Date.now();
+      var body = new Blob(['--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n',
+        JSON.stringify({ name: name, mimeType: 'image/jpeg', parents: [meta.folderId] }),
+        '\r\n--' + boundary + '\r\nContent-Type: image/jpeg\r\n\r\n', dataUrlToBlob(url), '\r\n--' + boundary + '--']);
+      return api(UPLOAD + '?uploadType=multipart&fields=id', { method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + boundary }, body: body });
+    });
+  }
+  function downloadPhoto(name, id) {
+    return api(API + 'files/' + id + '?alt=media').then(function (r) { return r.blob(); }).then(blobToDataUrl)
+      .then(function (url) { return Photos.add(name, url); });
+  }
+  /* Uploads pictures Drive lacks, fetches ones this device lacks, and moves pictures
+     no meal uses any more to Drive's bin (where Google keeps them for a while). */
+  function syncPhotos() {
+    var wanted = mealPhotos(state), keep = Object.assign(mealPhotos(previousState), wanted);
+    return Promise.all([listPhotos(), Photos.names()]).then(function (res) {
+      var remote = res[0], local = {}, chain = Promise.resolve();
+      res[1].forEach(function (n) { local[n] = 1; });
+      Object.keys(wanted).forEach(function (n) {
+        if (local[n] && !remote[n]) chain = chain.then(function () { return uploadPhoto(n); });
+        else if (!local[n] && remote[n]) chain = chain.then(function () { return downloadPhoto(n, remote[n]); });
+      });
+      Object.keys(remote).forEach(function (n) {
+        if (!keep[n] && !isEmpty(state)) {
+          chain = chain.then(function () {
+            return api(API + 'files/' + remote[n], { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) });
+          });
+        }
+      });
+      return chain;
+    });
+  }
+
+  /* One sync pass: compare this device with the Drive file and move the newer one across. */
+  function run() {
+    var loadEmail = meta.email ? Promise.resolve() : api(API + 'about?fields=user(emailAddress)').then(function (r) { return r.json(); })
+      .then(function (j) { meta.email = (j.user && j.user.emailAddress) || ''; }, function (e) { if (e.auth) throw e; });
+    return loadEmail.then(ensureFolder).then(function () {
+      if (!meta.fileId) return null;
+      return fetchRemote(meta.fileId).catch(function (e) { if (e.status === 404) { meta.fileId = ''; return null; } throw e; });
+    }).then(function (remote) {
+      if (remote || meta.fileId) return remote;
+      return findFile().then(function (id) { if (!id) return null; meta.fileId = id; return fetchRemote(id); });
+    }).then(function (remote) {
+      deferred = false;
+      if (!remote) return pushLocal();
+      // This device lost its copy (for example the browser cleared its data): take Drive's.
+      if (isEmpty(state) && !isEmpty(remote) && !meta.dirty) { adopt(remote); return null; }
+      if (remote.modifiedAt === meta.remoteModifiedAt) return meta.dirty ? pushLocal() : null;
+      // The Drive copy changed since this device last saw it.
+      if (isEmpty(remote) && !isEmpty(state)) return pushLocal();
+      if (!meta.dirty || isEmpty(state)) {
+        if (sheet) { again = true; deferred = true; return null; }   // wait until the open form is closed
+        adopt(remote);
+        return null;
+      }
+      // Both changed. Only ask when the user started this sync; otherwise show a banner.
+      if (!manual || sheet) { meta.conflict = true; return null; }
+      return askConflict(remote);
+    }).then(function () {
+      // Photos follow the diary, so only once this device and Drive agree on it.
+      return meta.conflict || deferred ? null : syncPhotos();
+    });
+  }
+  function askConflict(remote) {
+    return new Promise(function (resolve) {
+      var done = false;
+      openSheet({
+        title: 'Two versions of your diary',
+        autofocus: false,
+        body: '<p>This device and Google Drive both changed since they last synced. Choose which one to keep. The other is replaced.</p>' +
+          '<p class="cap">This device: ' + plural(daysWithEntries(state), 'day', 'days') + ' with entries, changed ' + agoLabel(state.modifiedAt) + '.<br>' +
+          'Google Drive: ' + plural(daysWithEntries(remote), 'day', 'days') + ' with entries, changed ' + agoLabel(remote.modifiedAt) + '.</p>' +
+          '<button type="button" class="btn primary block" data-act="conflictLocal">Keep this device</button>' +
+          '<button type="button" class="btn block" data-act="conflictRemote">Keep Google Drive</button>',
+        choose: function (which) {
+          if (done) return; done = true;
+          closeSheet();
+          meta.conflict = false;
+          render();   // the banner goes at once; photos may still be syncing
+          if (which === 'local') resolve(pushLocal()); else { adopt(remote); resolve(null); }
+        }
+      });
+      sheet.onClose = function () { if (!done) { done = true; meta.conflict = true; resolve(null); } };
+    });
+  }
+
+  /* byUser is true when the person tapped Sync; timers and app start pass nothing. */
+  function sync(byUser) {
+    if (!CLIENT_ID || !meta.linked) return Promise.resolve();
+    if (!tokenValid()) { render(); return Promise.resolve(); }
+    if (busy) { again = true; return Promise.resolve(); }
+    if (meta.conflict && !byUser) return Promise.resolve();
+    busy = true; manual = !!byUser; lastError = ''; render();
+    return run().then(function () { meta.lastSyncAt = Date.now(); }, function (e) {
+      lastError = e.auth ? '' : (e.message === 'Failed to fetch' ? 'no connection' : e.message || 'no connection');
+    }).then(function () {
+      busy = false; manual = false; saveMeta(); render();
+      if (again || (meta.dirty && !meta.conflict && tokenValid() && !lastError)) { again = false; schedule(1500); }
+    });
+  }
+  function schedule(ms) { clearTimeout(timer); timer = setTimeout(function () { sync(false); }, ms); }
+
+  return {
+    configured: function () { return !!CLIENT_ID; },
+    linked: function () { return !!CLIENT_ID && meta.linked; },
+    needsSignIn: function () { return !!CLIENT_ID && meta.linked && !tokenValid(); },
+    hasConflict: function () { return !!CLIENT_ID && meta.linked && meta.conflict && tokenValid(); },
+    busy: function () { return busy; },
+    error: function () { return lastError; },
+    meta: function () { return meta; },
+    connect: function () { beginAuth(false); },
+    sync: sync,
+    syncNow: function () { return sync(true); },
+    handleReturn: handleReturn,
+    localChanged: function () {
+      if (!meta.linked) return;
+      meta.dirty = true; saveMeta();
+      if (tokenValid()) schedule(4000);
+    },
+    setAuto: function (on) { meta.auto = on; saveMeta(); },
+    disconnect: function () {
+      meta = Object.assign({}, blank); token = null; lastError = '';
+      saveMeta(); lsSet('ld.token', null);
+    },
+    /* At start: renew an expired sign-in without asking, at most once every ten minutes. */
+    start: function (cameBack) {
+      if (!CLIENT_ID || !meta.linked) return;
+      if (tokenValid()) { sync(false); return; }
+      if (!cameBack && meta.auto && navigator.onLine !== false && Date.now() - meta.lastSilentAt > 600000) {
+        meta.lastSilentAt = Date.now(); saveMeta();
+        beginAuth(true);
+      }
+    },
+    resumed: function () { if (meta.linked && tokenValid() && !busy && Date.now() - meta.lastSyncAt > 60000) sync(false); }
+  };
+})();
+
+/* ----------------------------------------------------------------- actions */
+
+var actions = {
+  tab: function (d) {
+    ui.tab = d.val;
+    if (ui.showWeight) { ui.showWeight = false; leaveNav(); }
+    if (d.val === 'history') ui.month = todayIso().slice(0, 7);
+    render(); window.scrollTo(0, 0);
+  },
+  dismissTip: function () { lsSet('ld.tip', false); render(); },
+
+  dayPrev: function () { ui.date = addDays(ui.date, -1); render(); },
+  dayNext: function () { if (ui.date < todayIso()) { ui.date = addDays(ui.date, 1); render(); } },
+  mood: function (d) {
+    var level = Number(d.val), cur = state.moods.find(function (e) { return e.localDate === ui.date; });
+    if (cur) removeFrom('moods', cur);
+    if (!cur || cur.level !== level) state.moods.push({ localDate: ui.date, level: level, recordedAt: Date.now(), zoneOffset: currentOffset() });
+    commit();
+  },
+  openSleep: function () { sleepSheet(); },
+  openMeal: function (d) { mealSheet(d.id); },
+  mealPhotoPick: function () { var input = document.getElementById('meal-photo-input'); if (input) input.click(); },
+  mealPhotoRemove: function () { if (sheet) { sheet.photoNew = null; sheet.photoName = null; paintMealPhoto(); } },
+  viewPhoto: function () {
+    if (!sheet) return;
+    if (sheet.photoNew) { openViewer(sheet.photoNew); return; }
+    if (sheet.photoName) Photos.load(sheet.photoName).then(function (url) { if (url && !viewerOpen) openViewer(url); });
+  },
+  closeViewer: function () { closeViewer(); },
+  openActivity: function () { activitySheet(); },
+  pickActivity: function (d) { var input = document.querySelector('.sheet input[name="name"]'); if (input) input.value = d.val; },
+  removeActivity: function (d) {
+    var a = byId(state.activities, d.id);
+    if (a) confirmSheet('Remove activity?', a.name + ', ' + a.durationMinutes + ' min', 'Remove', function () { removeFrom('activities', a); commit(); });
+  },
+  openNote: function (d) { noteSheet(d.kind); },
+  customSet: function (d) {
+    var t = byId(state.customTrackers, d.id), n = Number(d.val);
+    var cur = state.customValues.find(function (v) { return v.trackerId === t.id && v.localDate === ui.date; });
+    setCustomValue(t, cur && cur.numberValue === n ? null : n, null);
+  },
+  openCustomNumber: function (d) { customNumberSheet(d.id); },
+  openCustomText: function (d) { customTextSheet(d.id); },
+  openWeightScreen: function () { ui.showWeight = true; pushNav(); render(); window.scrollTo(0, 0); },
+
+  monthPrev: function () { ui.month = addMonths(ui.month, -1); render(); },
+  monthNext: function () { if (ui.month < todayIso().slice(0, 7)) { ui.month = addMonths(ui.month, 1); render(); } },
+  colourBy: function (d) { ui.colourBy = d.val; render(); },
+  openDay: function (d) { ui.date = d.date; ui.tab = 'today'; render(); window.scrollTo(0, 0); },
+
+  period: function (d) { ui.period = d.val; render(); },
+  periodPrev: function () { ui.anchor = shiftAnchor(ui.period, ui.anchor, -1); render(); },
+  periodNext: function () { if (periodRange(ui.period, ui.anchor)[1] < todayIso()) { ui.anchor = shiftAnchor(ui.period, ui.anchor, 1); render(); } },
+  shareReport: function () {
+    var range = periodRange(ui.period, ui.anchor), photos = [];
+    if (ui.period === 'day') {
+      dayPhotoNames(range[0]).forEach(function (n) {
+        var url = Photos.peek(n);
+        if (url) { try { photos.push(new File([dataUrlToBlob(url)], n, { type: 'image/jpeg' })); } catch (e) { /* no File support */ } }
+      });
+    }
+    shareReport('life-diary-report-' + range[0] + (range[0] === range[1] ? '' : '-to-' + range[1]), photos);
+  },
+  copyReport: function () {
+    copyText(buildReport()).then(function (ok) { toast(ok ? 'Report copied. Paste it into Claude.' : 'Could not copy. Use Share report instead.'); });
+  },
+
+  toggle: function (d) {
+    var cur = state.settings.find(function (s) { return s.name === d.key; }), on = !isOn(d.key);
+    if (cur) cur.value = on ? '1' : '0'; else state.settings.push({ name: d.key, value: on ? '1' : '0' });
+    commit();
+  },
+  toggleCustom: function (d) { var t = byId(state.customTrackers, d.key); if (t) { t.enabled = !t.enabled; commit(); } },
+  addTracker: function () { trackerSheet(null); },
+  editTracker: function (d) { trackerSheet(d.id); },
+  backup: function () {
+    var count = Object.keys(mealPhotos(state)).length;
+    if (!count) { saveBackup(backupText(null)); return; }
+    openSheet({
+      title: 'Back up diary', autofocus: false,
+      body: '<p>Your diary has ' + plural(count, 'meal photo', 'meal photos') + '. Including them makes the backup complete, and the file larger.</p>' +
+        '<div id="backup-step"><button type="button" class="btn primary block" data-act="backupWithPhotos">Include photos</button>' +
+        '<button type="button" class="btn block mt8" data-act="backupTextOnly">Leave photos out</button></div>'
+    });
+  },
+  backupTextOnly: function () { closeSheet(); saveBackup(backupText(null)); },
+  /* Collecting photos takes a moment, and phones only open the share sheet straight after a tap,
+     so the file is prepared first and saved with a second tap. */
+  backupWithPhotos: function () {
+    var form = sheet, step = document.getElementById('backup-step');
+    var names = Object.keys(mealPhotos(state));
+    step.innerHTML = '<p class="cap">Collecting photos…</p>';
+    Promise.all(names.map(Photos.load)).then(function (urls) {
+      var photos = {}, found = 0;
+      names.forEach(function (n, i) { if (urls[i]) { photos[n] = urls[i]; found++; } });
+      if (sheet !== form) return;
+      form.prepared = backupText(photos);
+      step.innerHTML = '<p>Backup ready: ' + plural(found, 'photo', 'photos') + ', about ' + fmt1(form.prepared.length / 1048576) + ' MB.</p>' +
+        '<button type="button" class="btn primary block mt8" data-act="backupSave">Save backup file</button>';
+    });
+  },
+  backupSave: function () { var text = sheet && sheet.prepared; closeSheet(); if (text) saveBackup(text); },
+  restore: function () { document.getElementById('restore-file').click(); },
+  undoReplace: function () {
+    confirmSheet('Undo last replace?', 'The diary goes back to how it was before the last restore or Drive download.', 'Undo', function () {
+      if (!previousState) { toast('Nothing to undo'); return; }
+      var current = state;
+      state = previousState; state.modifiedAt = Date.now();
+      previousState = current;
+      Store.save('diary', state); Store.save('previous', current);
+      Drive.localChanged(); render(); toast('Previous diary brought back');
+    });
+  },
+  driveConnect: function () { Drive.connect(); },
+  driveSync: function () { Drive.syncNow(); },
+  driveDisconnect: function () {
+    confirmSheet('Disconnect Google Drive?', 'Syncing stops. Your diary stays on this device, and the file already in your Drive is left as it is.', 'Disconnect', function () { Drive.disconnect(); render(); });
+  },
+  driveAuto: function () { Drive.setAuto(!Drive.meta().auto); render(); },
+  conflictLocal: function () { if (sheet && sheet.choose) sheet.choose('local'); },
+  conflictRemote: function () { if (sheet && sheet.choose) sheet.choose('remote'); },
+
+  weightBack: function () { ui.showWeight = false; leaveNav(); render(); window.scrollTo(0, 0); },
+  weightRange: function (d) { ui.weightRange = d.val; render(); },
+  addWeight: function () { weightSheet(null); },
+  editWeight: function (d) { weightSheet(d.id); },
+
+  closeSheet: function () { closeSheet(); },
+  sheetExtra: function () { var s = sheet; closeSheet(); if (s && s.onExtra) s.onExtra(); }
+};
+
+document.addEventListener('click', function (e) {
+  var el = e.target.closest ? e.target.closest('[data-act]') : null;
+  if (!el || el.disabled) return;
+  var fn = actions[el.dataset.act];
+  if (fn) fn(el.dataset, el);
+});
+
+/* ------------------------------------------------------------------- start */
+
+Store.init().then(function () {
+  return Promise.all([Store.load('diary'), Store.load('previous')]);
+}).then(function (loaded) {
+  if (loaded[0]) state = normalize(loaded[0]);
+  previousState = loaded[1] ? normalize(loaded[1]) : null;
+  cleanupPhotos();
+  var returned = Drive.handleReturn();
+  render();
+  Drive.start(returned != null);
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
+});
+
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState !== 'visible') return;
+  // A new day may have started while the app was in the background.
+  if (ui.tab === 'today' && !sheet && lsGet('ld.lastSeenDay', '') !== todayIso()) { ui.date = todayIso(); ui.anchor = todayIso(); render(); }
+  lsSet('ld.lastSeenDay', todayIso());
+  Drive.resumed();
+});
+lsSet('ld.lastSeenDay', todayIso());
+
+if (!PREVIEW && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch(function () {});
+}
+
+/* Used by the automated tests only. */
+window.__lifeDiary = { getState: function () { return state; }, buildReport: buildReport, drive: Drive };
+
+})();
+</script>
+</body>
+</html>
