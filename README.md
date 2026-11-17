@@ -72,6 +72,7 @@ On the Summary tab, choose day, week or month, then **Share report** (or **Copy 
 - A **day** report is shared together with that day's meal photos, so Claude can see the meals. Week and month reports carry text only and note which meals have a photo.
 - Phones differ in what their share sheet accepts. The app tries, in order: Markdown file with photos, plain-text file with photos, photos with the report as message text, then the same without photos, and says so if the photos had to be left out.
 - On a computer, or wherever the browser cannot share files, the report and the day's photos are downloaded as separate files. Attach all of them in Claude.
+- **Download as zip** saves the report and all of the period's meal photos (day, week or month) as one zip file, which is handy for keeping. To send to Claude, separate files work best, because Claude looks at photos attached as images, which it may not do for pictures inside a zip.
 
 ## 5. Backups and the Android app
 

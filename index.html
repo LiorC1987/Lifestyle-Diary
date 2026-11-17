@@ -889,8 +889,10 @@ function viewSummary() {
     '<p class="mt8">Share this period as a report. It contains your entries, the figures above and instructions, so Claude can write what stood out and what is worth trying.</p>' +
     '<div class="row mt12">' + (PREVIEW ? '' : '<button class="btn primary" data-act="shareReport">Share report</button>') +
     '<button class="btn' + (PREVIEW ? ' primary' : '') + '" data-act="copyReport">Copy report</button></div>' +
+    (PREVIEW ? '' : '<button class="btn block mt8" data-act="zipReport">Download as zip</button>') +
     '<p class="cap mt10">Open the Claude app, attach or paste the report, and send it.' +
-    (dayPhotos.length && !PREVIEW ? ' This day\'s meal photos are sent along with it; on a computer they are downloaded as separate files.' : '') + '</p></section>';
+    (dayPhotos.length && !PREVIEW ? ' This day\'s meal photos are sent along with it; on a computer they are downloaded as separate files.' : '') +
+    (PREVIEW ? '' : ' The zip holds the report and all of the period\'s meal photos in one file.') + '</p></section>';
   return html + '</main>';
 }
 
@@ -1389,6 +1391,96 @@ function shareReport(base, photos, wanted) {
   if (missing > 0) setTimeout(function () { toast(plural(missing, 'photo is', 'photos are') + ' not stored in this browser, so not included'); }, 4000);
   return Promise.resolve();
 }
+/* A zip file without compression (photos are JPEGs already). files: [{ name, bytes }]. */
+var CRC_TABLE = null;
+function crc32(bytes) {
+  if (!CRC_TABLE) {
+    CRC_TABLE = new Uint32Array(256);
+    for (var n = 0; n < 256; n++) {
+      var c = n;
+      for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+      CRC_TABLE[n] = c >>> 0;
+    }
+  }
+  var crc = 0xFFFFFFFF;
+  for (var i = 0; i < bytes.length; i++) crc = CRC_TABLE[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+function makeZip(files) {
+  var now = new Date();
+  var time = (now.getHours() << 11) | (now.getMinutes() << 5) | Math.floor(now.getSeconds() / 2);
+  var date = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  var enc = new TextEncoder(), parts = [], central = [], offset = 0;
+  files.forEach(function (f) {
+    var name = enc.encode(f.name), crc = crc32(f.bytes), size = f.bytes.length;
+    var local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true); local.setUint16(6, 0x0800, true);
+    local.setUint16(8, 0, true); local.setUint16(10, time, true); local.setUint16(12, date, true);
+    local.setUint32(14, crc, true); local.setUint32(18, size, true); local.setUint32(22, size, true);
+    local.setUint16(26, name.length, true); local.setUint16(28, 0, true);
+    parts.push(local, name, f.bytes);
+    var entry = new DataView(new ArrayBuffer(46));
+    entry.setUint32(0, 0x02014b50, true); entry.setUint16(4, 20, true); entry.setUint16(6, 20, true);
+    entry.setUint16(8, 0x0800, true); entry.setUint16(10, 0, true); entry.setUint16(12, time, true);
+    entry.setUint16(14, date, true); entry.setUint32(16, crc, true); entry.setUint32(20, size, true);
+    entry.setUint32(24, size, true); entry.setUint16(28, name.length, true);
+    entry.setUint32(42, offset, true);
+    central.push(entry, name);
+    offset += 30 + name.length + size;
+  });
+  var centralSize = central.reduce(function (sum, x) { return sum + x.byteLength; }, 0);
+  var end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, centralSize, true); end.setUint32(16, offset, true);
+  return new Blob(parts.concat(central, [end]), { type: 'application/zip' });
+}
+function dataUrlToBytes(url) {
+  var bin = atob(url.split(',')[1]), bytes = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+/* All meal photo names in a period, in date and time order. */
+function periodPhotoNames(start, end) {
+  if (!isOn(KEYS.FOOD)) return [];
+  return state.meals.filter(function (m) { return m.localDate >= start && m.localDate <= end && photoOf(m); })
+    .sort(function (a, b) { return a.localDate < b.localDate ? -1 : a.localDate > b.localDate ? 1 : a.eatenAt - b.eatenAt; })
+    .map(photoOf);
+}
+/* Saves a binary file: through the share sheet on phones that allow it, otherwise as a download. */
+function saveBinary(name, blob) {
+  var file = null;
+  try { file = new File([blob], name, { type: blob.type }); } catch (e) { /* older browsers */ }
+  var ok = false;
+  try { ok = !!(file && isTouch() && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })); } catch (e) { ok = false; }
+  if (ok) {
+    return navigator.share({ files: [file], title: name }).then(function () { return true; }, function (err) {
+      if (err && err.name === 'AbortError') return false;
+      downloadBlob(name, blob); return true;
+    });
+  }
+  downloadBlob(name, blob);
+  return Promise.resolve(true);
+}
+function zipReport() {
+  var range = periodRange(ui.period, ui.anchor);
+  var base = 'life-diary-report-' + range[0] + (range[0] === range[1] ? '' : '-to-' + range[1]);
+  var names = periodPhotoNames(range[0], range[1]);
+  var build = function () {
+    var photos = [];
+    names.forEach(function (n) { var url = Photos.peek(n); if (url) photos.push({ name: n, bytes: dataUrlToBytes(url) }); });
+    var attached = photos.map(function (f) { return f.name; });
+    var files = [{ name: base + '.md', bytes: new TextEncoder().encode(buildReport(attached)) }].concat(photos);
+    saveBinary(base + '.zip', makeZip(files)).then(function (done) {
+      if (!done) return;
+      var missing = names.length - photos.length;
+      toast('Zip saved with the report' + (photos.length ? ' and ' + plural(photos.length, 'photo', 'photos') : '') +
+        (missing > 0 ? '. ' + plural(missing, 'photo is', 'photos are') + ' not stored in this browser' : ''));
+    });
+  };
+  // Photos are read in first. With photos already loaded the zip is made at once.
+  if (names.every(function (n) { return Photos.peek(n); })) build();
+  else Promise.all(names.map(function (n) { return Photos.load(n); })).then(build);
+}
 function download(name, mime, text) { downloadBlob(name, new Blob([text], { type: mime })); }
 function downloadBlob(name, blob) {
   var url = URL.createObjectURL(blob);
@@ -1773,6 +1865,7 @@ var actions = {
     if (names.every(function (n) { return Photos.peek(n); })) { shareReport(base, files(), names.length); return; }
     Promise.all(names.map(function (n) { return Photos.load(n); })).then(function () { shareReport(base, files(), names.length); });
   },
+  zipReport: function () { zipReport(); },
   copyReport: function () {
     copyText(buildReport()).then(function (ok) { toast(ok ? 'Report copied. Paste it into Claude.' : 'Could not copy. Use Share report instead.'); });
   },
