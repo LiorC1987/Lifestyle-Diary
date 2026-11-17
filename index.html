@@ -890,7 +890,7 @@ function viewSummary() {
     '<div class="row mt12">' + (PREVIEW ? '' : '<button class="btn primary" data-act="shareReport">Share report</button>') +
     '<button class="btn' + (PREVIEW ? ' primary' : '') + '" data-act="copyReport">Copy report</button></div>' +
     '<p class="cap mt10">Open the Claude app, attach or paste the report, and send it.' +
-    (dayPhotos.length && !PREVIEW ? ' This day\'s meal photos are sent along with it where the phone allows.' : '') + '</p></section>';
+    (dayPhotos.length && !PREVIEW ? ' This day\'s meal photos are sent along with it; on a computer they are downloaded as separate files.' : '') + '</p></section>';
   return html + '</main>';
 }
 
@@ -1344,20 +1344,28 @@ function saveFile(name, mime, text) {
   return Promise.resolve(true);
 }
 /* Sends the report through the phone's share sheet in the richest form it accepts:
-   Markdown file with photos, text file with photos, photos with the text, then the
-   same without photos. Where sharing is not possible, the Markdown file is downloaded. */
-function shareReport(base, photos) {
+   Markdown file with photos, text file with photos, photos with the report as text,
+   then the same without photos. Where the browser cannot share files (computers,
+   most desktop browsers), the report and the photos are downloaded as separate files.
+   wanted: how many photos the day has, so a shortfall can be explained. */
+function shareReport(base, photos, wanted) {
   var attached = photos.map(function (f) { return f.name; });
-  var fallback = function () { download(base + '.md', 'text/markdown', buildReport([])); };
+  var missing = (wanted || 0) - photos.length;
+  var downloadAll = function () {
+    download(base + '.md', 'text/markdown', buildReport(attached));
+    photos.forEach(function (f, i) { setTimeout(function () { downloadBlob(f.name, f); }, 400 * (i + 1)); });
+    toast(photos.length ? 'Report and ' + plural(photos.length, 'photo', 'photos') + ' downloaded. Attach them all in Claude.'
+      : 'Report downloaded. Attach it in Claude.');
+  };
   var tries = [];
   if (isTouch() && navigator.share && navigator.canShare) {
     try {
       var md = function (names) { return new File([buildReport(names)], base + '.md', { type: 'text/markdown' }); };
       var txt = function (names) { return new File([buildReport(names)], base + '.txt', { type: 'text/plain' }); };
       if (photos.length) {
-        tries.push({ files: [md(attached)].concat(photos) });
-        tries.push({ files: [txt(attached)].concat(photos) });
-        tries.push({ files: photos, text: buildReport(attached) });
+        tries.push({ files: [md(attached)].concat(photos), photos: true });
+        tries.push({ files: [txt(attached)].concat(photos), photos: true });
+        tries.push({ files: photos, text: buildReport(attached), photos: true });
       }
       tries.push({ files: [md([])] });
       tries.push({ files: [txt([])] });
@@ -1365,22 +1373,29 @@ function shareReport(base, photos) {
     tries.push({ text: buildReport([]) });
   }
   for (var i = 0; i < tries.length; i++) {
-    var ok = false;
-    try { ok = navigator.canShare(tries[i]); } catch (e) { ok = false; }
-    if (ok) {
-      tries[i].title = base;
-      return navigator.share(tries[i]).catch(function (err) { if (!err || err.name !== 'AbortError') fallback(); });
-    }
+    var data = { title: base }, ok = false;
+    if (tries[i].files) data.files = tries[i].files;
+    if (tries[i].text) data.text = tries[i].text;
+    try { ok = navigator.canShare(data); } catch (e) { ok = false; }
+    if (!ok) continue;
+    if (photos.length && !tries[i].photos) toast('This browser could not share the photos, so only the report was sent');
+    else if (missing > 0) toast(plural(missing, 'photo is', 'photos are') + ' not stored in this browser, so not sent');
+    return navigator.share(data).catch(function (err) {
+      if (err && err.name === 'AbortError') return;     // closed by the user
+      downloadAll();
+    });
   }
-  fallback();
+  downloadAll();
+  if (missing > 0) setTimeout(function () { toast(plural(missing, 'photo is', 'photos are') + ' not stored in this browser, so not included'); }, 4000);
   return Promise.resolve();
 }
-function download(name, mime, text) {
-  var url = URL.createObjectURL(new Blob([text], { type: mime }));
+function download(name, mime, text) { downloadBlob(name, new Blob([text], { type: mime })); }
+function downloadBlob(name, blob) {
+  var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
   a.href = url; a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
 }
 function backupText(photos) {
   var out = Object.assign({}, state, { exportedAt: Date.now() });
@@ -1742,14 +1757,21 @@ var actions = {
   periodPrev: function () { ui.anchor = shiftAnchor(ui.period, ui.anchor, -1); render(); },
   periodNext: function () { if (periodRange(ui.period, ui.anchor)[1] < todayIso()) { ui.anchor = shiftAnchor(ui.period, ui.anchor, 1); render(); } },
   shareReport: function () {
-    var range = periodRange(ui.period, ui.anchor), photos = [];
-    if (ui.period === 'day') {
-      dayPhotoNames(range[0]).forEach(function (n) {
+    var range = periodRange(ui.period, ui.anchor);
+    var base = 'life-diary-report-' + range[0] + (range[0] === range[1] ? '' : '-to-' + range[1]);
+    var names = ui.period === 'day' ? dayPhotoNames(range[0]) : [];
+    var files = function () {
+      var out = [];
+      names.forEach(function (n) {
         var url = Photos.peek(n);
-        if (url) { try { photos.push(new File([dataUrlToBlob(url)], n, { type: 'image/jpeg' })); } catch (e) { /* no File support */ } }
+        if (url) { try { out.push(new File([dataUrlToBlob(url)], n, { type: 'image/jpeg' })); } catch (e) { /* no File support */ } }
       });
-    }
-    shareReport('life-diary-report-' + range[0] + (range[0] === range[1] ? '' : '-to-' + range[1]), photos);
+      return out;
+    };
+    // The day's photos are normally read in already, so the share sheet opens straight from the tap.
+    // If one is not, read it first; most browsers still allow the share a moment later.
+    if (names.every(function (n) { return Photos.peek(n); })) { shareReport(base, files(), names.length); return; }
+    Promise.all(names.map(function (n) { return Photos.load(n); })).then(function () { shareReport(base, files(), names.length); });
   },
   copyReport: function () {
     copyText(buildReport()).then(function (ok) { toast(ok ? 'Report copied. Paste it into Claude.' : 'Could not copy. Use Share report instead.'); });
