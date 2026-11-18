@@ -54,3 +54,29 @@ create policy "Own photos: change" on storage.objects for update to authenticate
   with check (bucket_id = 'photos' and (storage.foldername(name))[1] = (select auth.uid())::text);
 create policy "Own photos: delete" on storage.objects for delete to authenticated
   using (bucket_id = 'photos' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+-- Summaries written by Claude (through the "summarize" server function).
+-- People can read their own; only the server function, with the secret key, adds them.
+create table public.summaries (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  period text not null check (period in ('day', 'week', 'month')),
+  start_date date not null,
+  end_date date not null,
+  text text not null,
+  model text,
+  input_tokens integer,
+  output_tokens integer,
+  created_at timestamptz not null default now()
+);
+create index summaries_lookup on public.summaries (user_id, period, start_date, created_at desc);
+create index summaries_recent on public.summaries (user_id, created_at desc);
+alter table public.summaries enable row level security;
+revoke all on public.summaries from anon;
+revoke all on public.summaries from authenticated;
+grant select, delete on public.summaries to authenticated;
+grant all on public.summaries to service_role;
+create policy "Own summaries: read" on public.summaries
+  for select to authenticated using ((select auth.uid()) = user_id);
+create policy "Own summaries: delete" on public.summaries
+  for delete to authenticated using ((select auth.uid()) = user_id);

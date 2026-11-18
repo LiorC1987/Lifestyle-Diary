@@ -68,6 +68,7 @@ button.card{display:block;width:100%;text-align:left}
 .seg:has(input:checked){border-color:var(--accent);background:var(--tint);color:var(--accent-dark);font-weight:600}
 .item:disabled .title{color:var(--muted)}
 .strong{font-weight:600}
+.md h3{font-size:15px;font-weight:600;margin:14px 0 4px}.md h3:first-child{margin-top:0}.md p{margin:6px 0}.md ul{margin:6px 0;padding-left:20px}.md li{margin:3px 0}
 .thumb{flex:none;width:56px;height:56px;border-radius:8px;object-fit:cover;background:var(--tint)}
 .photo-btn{display:block;width:100%;padding:0;border:0;background:none}
 .photo-preview{display:block;width:100%;max-height:260px;border-radius:10px;object-fit:cover;background:var(--tint)}
@@ -156,7 +157,8 @@ var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'S
 
 var KEYS = {
   FOOD: 'tracker.food', MOOD: 'tracker.mood', SLEEP: 'tracker.sleep', WEIGHT: 'tracker.weight',
-  ACTIVITY: 'tracker.activity', DREAMS: 'tracker.dreams', THOUGHTS: 'tracker.thoughts'
+  ACTIVITY: 'tracker.activity', DREAMS: 'tracker.dreams', THOUGHTS: 'tracker.thoughts',
+  AI: 'claude.summaries'   // off unless switched on: entries are sent to Claude only then
 };
 var DEFAULTS = {};
 DEFAULTS[KEYS.FOOD] = '1'; DEFAULTS[KEYS.MOOD] = '1'; DEFAULTS[KEYS.SLEEP] = '1'; DEFAULTS[KEYS.WEIGHT] = '1';
@@ -900,7 +902,8 @@ function viewSummary() {
       return '<div class="fig"><span class="grow">' + r[0] + '</span><span class="strong">' + esc(r[1]) + '</span></div>';
     }).join('') : '<p class="cap" style="padding:0 14px 14px">All trackers are switched off.</p>') + '</section>';
 
-  html += '<section class="card"><h2 class="label">Summary from Claude</h2>' +
+  html += claudeCard(ui.period, start, end);
+  html += '<section class="card"><h2 class="label">' + (Claude.available() ? 'Or share the report yourself' : 'Summary from Claude') + '</h2>' +
     '<p class="mt8">Share this period as a report. It contains your entries, the figures above and instructions, so Claude can write what stood out and what is worth trying.</p>' +
     '<div class="row mt12">' + (PREVIEW ? '' : '<button class="btn primary" data-act="shareReport">Share report</button>') +
     '<button class="btn' + (PREVIEW ? ' primary' : '') + '" data-act="copyReport">Copy report</button></div>' +
@@ -910,6 +913,90 @@ function viewSummary() {
     (PREVIEW ? '' : ' The zip holds the report and all of the period\'s meal photos in one file.') + '</p></section>';
   return html + '</main>';
 }
+
+/* Summaries written by Claude through the account's "summarize" server function. */
+function claudeCard(period, start, end) {
+  if (PREVIEW || !Cloud.configured()) return '';
+  var h = '<section class="card" id="claude"><h2 class="label">Summary from Claude</h2>';
+  if (!Cloud.signedIn()) return h + '<p class="cap mt8">Sign in under Trackers → Online account, then switch on Claude summaries to get them written right here.</p></section>';
+  if (!isOn(KEYS.AI)) return h + '<p class="cap mt8">Claude can write this summary for you right here. Switch on Claude summaries under Trackers to try it.</p></section>';
+  var s = Claude.get(period, start), asking = Claude.asking(period, start), err = Claude.error(period, start);
+  if (s && s.text) h += '<div class="md mt8">' + markdown(s.text) + '</div><p class="cap mt10">Written by Claude ' + esc(agoLabel(Date.parse(s.at))) + '.</p>';
+  else if (!asking) h += '<p class="mt8">Ask Claude to read this ' + period + '\'s entries' + (periodPhotoNames(start, end).length ? ' and meal photos' : '') + ' and write what stood out and what is worth trying.</p>';
+  if (asking) h += '<p class="mt10 cap">Claude is writing… this takes about half a minute.</p>';
+  if (err) h += '<p class="cap mt10" style="color:var(--warn)">' + esc(err) + '</p>';
+  h += '<button class="btn' + (s && s.text ? '' : ' primary') + ' block mt12" data-act="askClaude"' + (asking ? ' disabled' : '') + '>' +
+    (asking ? 'Writing…' : s && s.text ? 'Ask again with the latest entries' : 'Ask Claude') + '</button>';
+  return h + '</section>';
+}
+/* A small Markdown reader for Claude's answers: headings, bullet points, bold and paragraphs. */
+function markdown(text) {
+  var out = [], list = false, para = [];
+  function inline(t) { return esc(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\s][^*]*?)\*(?!\*)/g, '$1<em>$2</em>'); }
+  function flush() { if (para.length) { out.push('<p>' + inline(para.join(' ')) + '</p>'); para = []; } }
+  function endList() { if (list) { out.push('</ul>'); list = false; } }
+  String(text).split(/\r?\n/).forEach(function (line) {
+    var t = line.trim(), m;
+    if (!t) { flush(); endList(); return; }
+    if ((m = t.match(/^#{1,6}\s+(.*)$/))) { flush(); endList(); out.push('<h3>' + inline(m[1].replace(/\*\*/g, '')) + '</h3>'); return; }
+    if ((m = t.match(/^(?:[-*•]|\d+[.)])\s+(.*)$/))) { flush(); if (!list) { out.push('<ul>'); list = true; } out.push('<li>' + inline(m[1]) + '</li>'); return; }
+    endList(); para.push(t);
+  });
+  flush(); endList();
+  return out.join('');
+}
+
+var Claude = (function () {
+  var cache = lsGet('ld.summaries', {}), asking = {}, errors = {}, checked = {};
+  function key(period, start) { return period + ':' + start; }
+  function keep() { lsSet('ld.summaries', cache); }
+  function load(period, start) {
+    var k = key(period, start);
+    if (checked[k] || !Cloud.signedIn()) return;
+    checked[k] = true;
+    Cloud.call('/rest/v1/summaries?select=text,created_at&period=eq.' + period + '&start_date=eq.' + start + '&order=created_at.desc&limit=1')
+      .then(function (r) { return r.json(); }).then(function (rows) {
+        if (Array.isArray(rows) && rows[0] && (!cache[k] || Date.parse(rows[0].created_at) > Date.parse(cache[k].at))) {
+          cache[k] = { text: rows[0].text, at: rows[0].created_at }; keep(); render();
+        }
+      }).catch(function () { checked[k] = false; });
+  }
+  function ask(period, start, end) {
+    var k = key(period, start);
+    if (asking[k]) return;
+    asking[k] = true; errors[k] = ''; render();
+    var forPeriod = ui.period, forAnchor = ui.anchor;
+    var wanted = periodPhotoNames(start, end);
+    // Send only photos that are already in the account; save any new ones first.
+    var ready = !wanted.length ? Promise.resolve({})
+      : Cloud.sync(false).then(function () { return Cloud.listPhotos(); }).catch(function () { return {}; });
+    ready.then(function (online) {
+      var photos = wanted.filter(function (n) { return online[n]; }).slice(-20);
+      var nowPeriod = ui.period, nowAnchor = ui.anchor;
+      ui.period = forPeriod; ui.anchor = forAnchor;
+      var report = buildReport(photos);
+      ui.period = nowPeriod; ui.anchor = nowAnchor;
+      return Cloud.call('/functions/v1/summarize', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period: period, start: start, end: end, report: report, photos: photos })
+      });
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      cache[k] = { text: j.text, at: j.created_at || new Date().toISOString() }; keep();
+    }, function (e) {
+      errors[k] = e.auth ? 'You are signed out. Sign in again under Trackers.'
+        : e.message === 'Failed to fetch' || e.name === 'TypeError' ? 'No connection. Try again when you are online.'
+        : e.message || 'Something went wrong. Try again.';
+    }).then(function () { asking[k] = false; render(); });
+  }
+  return {
+    available: function () { return !PREVIEW && Cloud.signedIn() && isOn(KEYS.AI); },
+    get: function (period, start) { if (isOn(KEYS.AI)) load(period, start); return cache[key(period, start)]; },
+    asking: function (period, start) { return !!asking[key(period, start)]; },
+    error: function (period, start) { return errors[key(period, start)] || ''; },
+    ask: ask,
+    forget: function () { cache = {}; asking = {}; errors = {}; checked = {}; keep(); }
+  };
+})();
 
 /* The Markdown report: instructions for Claude first, then figures, then every entry. */
 function dayPhotoNames(iso) {
@@ -1008,6 +1095,12 @@ function viewTrackers() {
     seg('weightUnit', 'kg', 'Kilograms (kg)', weightUnit() === 'kg') + seg('weightUnit', 'lb', 'Pounds (lb)', weightUnit() === 'lb') +
     '</div><p class="cap mt8">Weights are kept exactly; this only changes how they are shown and entered.</p></section>';
 
+  if (Cloud.configured() && !PREVIEW) {
+    html += '<section class="card flush" aria-label="Claude summaries"><div class="item"><span class="grow"><span class="title">Claude summaries</span><br><span class="sub">' +
+      (Cloud.signedIn() ? 'Get a summary written right on the Summary page. When you tap Ask Claude, that period\'s entries and meal photos are sent to Claude.'
+        : 'Needs the online account below.') + '</span></span>' +
+      (Cloud.signedIn() ? switchBtn('toggle', KEYS.AI, 'Claude summaries', isOn(KEYS.AI)) : '') + '</div></section>';
+  }
   html += '<section class="card flush" id="account" aria-label="Account"><h2 class="label pad">Online account</h2>' + accountCard() + '</section>';
 
   var lastBackup = lsGet('ld.lastBackup', 0);
@@ -1018,7 +1111,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.3.</p>';
+    '. Version 0.4.</p>';
   return html + '</main>';
 }
 function accountCard() {
@@ -1868,6 +1961,7 @@ var Cloud = (function () {
     state = emptyState(); previousState = null;
     Store.save('diary', state); Store.save('previous', null);
     cleanupPhotos();
+    Claude.forget();
     render();
   }
 
@@ -1883,6 +1977,12 @@ var Cloud = (function () {
     meta: function () { return meta; },
     signIn: signIn,
     signOut: signOut,
+    listPhotos: function () { return listPhotos(); },
+    /* A request with the person's sign-in, tried once more if the sign-in had to be renewed. */
+    call: function (path, opts) {
+      function go() { return api(path, Object.assign({}, opts, { headers: Object.assign({}, opts && opts.headers) })); }
+      return go().catch(function (e) { if (e.message === 'sign-in renewed, trying again') { again = false; return go(); } throw e; });
+    },
     sync: sync,
     syncNow: function () { return sync(true); },
     localChanged: function () {
@@ -1963,6 +2063,7 @@ var actions = {
     Promise.all(names.map(function (n) { return Photos.load(n); })).then(function () { shareReport(base, files(), names.length); });
   },
   zipReport: function () { zipReport(); },
+  askClaude: function () { var r = periodRange(ui.period, ui.anchor); Claude.ask(ui.period, r[0], r[1]); },
   copyReport: function () {
     copyText(buildReport()).then(function (ok) { toast(ok ? 'Report copied. Paste it into Claude.' : 'Could not copy. Use Share report instead.'); });
   },
@@ -2098,7 +2199,7 @@ if (!PREVIEW && 'serviceWorker' in navigator && (location.protocol === 'https:' 
 }
 
 /* Used by the automated tests only. */
-window.__lifeDiary = { getState: function () { return state; }, buildReport: buildReport, cloud: Cloud };
+window.__lifeDiary = { getState: function () { return state; }, buildReport: buildReport, cloud: Cloud, markdown: markdown };
 
 })();
 </script>
