@@ -80,3 +80,24 @@ create policy "Own summaries: read" on public.summaries
   for select to authenticated using ((select auth.uid()) = user_id);
 create policy "Own summaries: delete" on public.summaries
   for delete to authenticated using ((select auth.uid()) = user_id);
+
+-- Per-day calorie estimates sent along with each Claude summary (for the balance history).
+create table public.daily_estimates (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  day date not null,
+  eaten_kcal integer,
+  burned_kcal integer,
+  protein_g integer,
+  carbs_g integer,
+  fat_g integer,
+  source_period text,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, day)
+);
+alter table public.daily_estimates enable row level security;
+revoke all on public.daily_estimates from anon;
+revoke all on public.daily_estimates from authenticated;
+grant select on public.daily_estimates to authenticated;
+grant all on public.daily_estimates to service_role;
+create policy "Own estimates: read" on public.daily_estimates
+  for select to authenticated using ((select auth.uid()) = user_id);

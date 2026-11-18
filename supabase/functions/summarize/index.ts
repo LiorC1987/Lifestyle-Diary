@@ -40,6 +40,36 @@ const SYSTEM = [
   "Format: Markdown with '## ' section headings, short paragraphs and '- ' bullet points. Simple Markdown tables are allowed where the report asks for them. No other headings.",
 ].join("\n");
 
+// Asked for on top of the summary; the app hides this block and keeps the numbers per day.
+const ESTIMATES = [
+  "",
+  "After the summary, if you estimated any meals, add one last fenced code block with the language name estimates, holding JSON only:",
+  '{"days":[{"date":"YYYY-MM-DD","eaten_kcal":0,"burned_kcal":0,"protein_g":0,"carbs_g":0,"fat_g":0}]}',
+  "One entry per day with meals logged in this period, using the middle of your ranges as whole numbers.",
+  "Use the same numbers as in your summary. Set burned_kcal to null where you did not estimate calories burned. Do not mention this block in the summary.",
+].join("\n");
+
+type DayEstimate = { date: string; eaten_kcal: number | null; burned_kcal: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null };
+function num(v: unknown): number | null {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  return Number.isFinite(n) && n >= 0 && n < 100000 ? Math.round(n) : null;
+}
+/* Takes the estimates block out of Claude's answer and reads the numbers in it. */
+function splitEstimates(text: string, start: string, end: string): { text: string; days: DayEstimate[] } {
+  const m = text.match(/```\s*estimates\s*\n([\s\S]*?)```\s*$/i) || text.match(/```\s*estimates\s*\n([\s\S]*?)```/i);
+  if (!m) return { text, days: [] };
+  const rest = text.replace(m[0], "").trim();
+  try {
+    const j = JSON.parse(m[1]);
+    const days = (Array.isArray(j?.days) ? j.days : []).filter((d: { date?: unknown }) => isDate(d?.date) && String(d.date) >= start && String(d.date) <= end)
+      .map((d: Record<string, unknown>) => ({ date: String(d.date), eaten_kcal: num(d.eaten_kcal), burned_kcal: num(d.burned_kcal), protein_g: num(d.protein_g), carbs_g: num(d.carbs_g), fat_g: num(d.fat_g) }))
+      .filter((d: DayEstimate) => d.eaten_kcal != null);
+    return { text: rest, days };
+  } catch (_) {
+    return { text: rest, days: [] };
+  }
+}
+
 function toBase64(bytes: Uint8Array): string {
   let bin = "";
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -94,7 +124,7 @@ Deno.serve(async (req) => {
   const claude = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: 6000, system: SYSTEM, messages: [{ role: "user", content }] }),
+    body: JSON.stringify({ model: MODEL, max_tokens: 6000, system: SYSTEM + ESTIMATES, messages: [{ role: "user", content }] }),
   });
   const answer = await claude.json().catch(() => ({}));
   if (!claude.ok) {
@@ -105,7 +135,8 @@ Deno.serve(async (req) => {
     if (claude.status === 429 || claude.status === 529) return fail(503, "Claude is busy right now. Try again in a minute.");
     return fail(502, "Claude could not write the summary (" + claude.status + ").");
   }
-  const text = (answer.content || []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n").trim();
+  const raw = (answer.content || []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n").trim();
+  const { text, days } = splitEstimates(raw, start, end);
   if (!text) return fail(502, "Claude sent back an empty summary. Try again.");
   // Room for Claude's thinking plus the answer is generous, but say so if it still ran out.
   const finalText = answer.stop_reason === "max_tokens" ? text + "\n\n*This summary was cut short. Tap Ask again for the full version.*" : text;
@@ -122,5 +153,17 @@ Deno.serve(async (req) => {
   if (saved.ok) { const rows = await saved.json(); if (rows?.[0]?.created_at) createdAt = rows[0].created_at; }
   else console.error("Could not save summary", saved.status, await saved.text());
 
-  return reply(200, { text: finalText, created_at: createdAt, period, start });
+  // The day-by-day numbers, for the calorie balance history.
+  if (days.length) {
+    const estimates = days.map((d) => ({
+      user_id: uid, day: d.date, eaten_kcal: d.eaten_kcal, burned_kcal: d.burned_kcal, protein_g: d.protein_g,
+      carbs_g: d.carbs_g, fat_g: d.fat_g, source_period: period, updated_at: new Date().toISOString(),
+    }));
+    const put = await fetch(URL_BASE + "/rest/v1/daily_estimates?on_conflict=user_id,day", {
+      method: "POST", headers: { ...saveHeaders, Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(estimates),
+    });
+    if (!put.ok) console.error("Could not save estimates", put.status, await put.text());
+  }
+
+  return reply(200, { text: finalText, created_at: createdAt, period, start, days });
 });

@@ -68,7 +68,7 @@ button.card{display:block;width:100%;text-align:left}
 .seg:has(input:checked){border-color:var(--accent);background:var(--tint);color:var(--accent-dark);font-weight:600}
 .item:disabled .title{color:var(--muted)}
 .strong{font-weight:600}
-.md h3{font-size:15px;font-weight:600;margin:14px 0 4px}.md h3:first-child{margin-top:0}.md p{margin:6px 0}.md ul{margin:6px 0;padding-left:20px}.md li{margin:3px 0}.md-table{overflow-x:auto;margin:8px 0}.md table{border-collapse:collapse;width:100%;font-size:14px}.md th,.md td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line,rgba(127,127,127,.25))}.md th{font-weight:600}.md td:not(:first-child),.md th:not(:first-child){text-align:right;white-space:nowrap}
+.md h3{font-size:15px;font-weight:600;margin:14px 0 4px}.md h3:first-child{margin-top:0}.md p{margin:6px 0}.md ul{margin:6px 0;padding-left:20px}.md li{margin:3px 0}.md-table{overflow-x:auto;margin:8px 0}.balance tr.avg td{font-weight:600;border-bottom:0}.balance-chart{display:flex;gap:3px;align-items:stretch}.bcol{flex:1;display:flex;flex-direction:column}.bup,.bdown{height:40px;display:flex}.bup{align-items:flex-end;border-bottom:1px solid var(--muted)}.bdown{align-items:flex-start}.bup span,.bdown span{width:100%;border-radius:2px}.bup span{background:var(--warn)}.bdown span{background:var(--accent)}.md table{border-collapse:collapse;width:100%;font-size:14px}.md th,.md td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line,rgba(127,127,127,.25))}.md th{font-weight:600}.md td:not(:first-child),.md th:not(:first-child){text-align:right;white-space:nowrap}
 .thumb{flex:none;width:56px;height:56px;border-radius:8px;object-fit:cover;background:var(--tint)}
 .photo-btn{display:block;width:100%;padding:0;border:0;background:none}
 .photo-preview{display:block;width:100%;max-height:260px;border-radius:10px;object-fit:cover;background:var(--tint)}
@@ -985,6 +985,7 @@ function viewSummary() {
     }).join('') : '<p class="cap" style="padding:0 14px 14px">All trackers are switched off.</p>') + '</section>';
 
   html += claudeCard(ui.period, start, end);
+  html += balanceCard(ui.period, start, end);
   html += '<section class="card"><h2 class="label">' + (Claude.available() ? 'Or share the report yourself' : 'Summary from Claude') + '</h2>' +
     '<p class="mt8">Share this period as a report. It contains your entries, the figures above and instructions, so Claude can write what stood out and what is worth trying.</p>' +
     '<div class="row mt12">' + (PREVIEW ? '' : '<button class="btn primary" data-act="shareReport">Share report</button>') +
@@ -1015,6 +1016,71 @@ function claudeCard(period, start, end) {
     (asking ? 'Writing…' : s && s.text ? 'Ask again with the latest entries' : 'Ask Claude') + '</button>';
   return h + '</section>';
 }
+/* Calorie balance history: the per-day numbers Claude sends with each summary. */
+function balanceCard(period, start, end) {
+  if (!Claude.available() || !isOn(KEYS.FOOD)) return '';
+  var days = [];
+  for (var iso = start; iso <= end; iso = addDays(iso, 1)) { var e = Estimates.get(iso); if (e) days.push([iso, e]); }
+  Estimates.load(start, end);
+  var h = '<section class="card" id="balance"><h2 class="label">Calorie balance</h2>';
+  if (!days.length) {
+    return h + '<p class="cap mt8">No estimates for this ' + period + ' yet. They are filled in each time Claude writes a summary that covers these days.</p></section>';
+  }
+  function signed(n) { return n == null ? '–' : (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(Math.round(n)).toLocaleString('en-US'); }
+  function kcal(n) { return n == null ? '–' : Math.round(n).toLocaleString('en-US'); }
+  var bal = days.map(function (d) { return d[1].out != null ? d[1].in - d[1].out : null; });
+  // Bars: one per day of the period, growing up for a surplus and down for a deficit.
+  if (period !== 'day' && bal.filter(function (b) { return b != null; }).length >= 2) {
+    var byDay = {}; days.forEach(function (d, i) { byDay[d[0]] = bal[i]; });
+    var max = Math.max.apply(null, bal.filter(function (b) { return b != null; }).map(Math.abs).concat([1]));
+    h += '<div class="balance-chart mt10" aria-hidden="true">';
+    for (var d2 = start; d2 <= end; d2 = addDays(d2, 1)) {
+      var b = byDay[d2], ht = b == null ? 0 : Math.max(2, Math.round(Math.abs(b) / max * 40));
+      h += '<span class="bcol"><span class="bup">' + (b > 0 ? '<span style="height:' + ht + 'px"></span>' : '') + '</span>' +
+        '<span class="bdown">' + (b < 0 ? '<span style="height:' + ht + 'px"></span>' : '') + '</span></span>';
+    }
+    h += '</div><p class="cap mt8">Bars above the line are a surplus, below it a deficit.</p>';
+  }
+  h += '<div class="md-table mt10"><table class="balance"><tr><th>Day</th><th>Eaten</th><th>Burned</th><th>Balance</th></tr>';
+  days.forEach(function (d, i) {
+    h += '<tr><td>' + esc(weekdayName(d[0]).slice(0, 3) + ' ' + dayMonth(d[0])) + (d[0] === todayIso() ? ' (so far)' : '') + '</td><td>' + kcal(d[1].in) + '</td><td>' + kcal(d[1].out) + '</td><td>' + signed(bal[i]) + '</td></tr>';
+  });
+  if (days.length > 1) {
+    var avg = function (xs) { xs = xs.filter(function (x) { return x != null; }); return xs.length ? average(xs) : null; };
+    h += '<tr class="avg"><td>Average</td><td>' + kcal(avg(days.map(function (d) { return d[1].in; }))) + '</td><td>' +
+      kcal(avg(days.map(function (d) { return d[1].out; }))) + '</td><td>' + signed(avg(bal)) + '</td></tr>';
+  }
+  h += '</table></div><p class="cap mt10">In kcal, for ' + plural(days.length, 'day', 'days') + ' with an estimate. ' + NUTRITION_NOTE + '</p>';
+  return h + '</section>';
+}
+var Estimates = (function () {
+  var cache = lsGet('ld.estimates', {}), checked = {};
+  function keep() { lsSet('ld.estimates', cache); }
+  function put(rows) {
+    (rows || []).forEach(function (r) {
+      var day = r.day || r.date;
+      if (day && r.eaten_kcal != null) cache[day] = { in: r.eaten_kcal, out: r.burned_kcal, p: r.protein_g, c: r.carbs_g, f: r.fat_g };
+    });
+    keep();
+  }
+  return {
+    get: function (iso) { return cache[iso]; },
+    put: put,
+    load: function (start, end) {
+      var k = start + ':' + end;
+      if (checked[k] || !Cloud.signedIn()) return;
+      checked[k] = true;
+      Cloud.call('/rest/v1/daily_estimates?select=day,eaten_kcal,burned_kcal,protein_g,carbs_g,fat_g&day=gte.' + start + '&day=lte.' + end)
+        .then(function (r) { return r.json(); }).then(function (rows) {
+          if (!Array.isArray(rows)) return;
+          var before = JSON.stringify(cache); put(rows);
+          if (JSON.stringify(cache) !== before) render();
+        }).catch(function () { checked[k] = false; });
+    },
+    forget: function () { cache = {}; checked = {}; keep(); }
+  };
+})();
+
 /* A small Markdown reader for Claude's answers: headings, bullet points, simple tables, bold and paragraphs. */
 function markdown(text) {
   var out = [], list = false, para = [], table = null;
@@ -1083,6 +1149,7 @@ var Claude = (function () {
       });
     }).then(function (r) { return r.json(); }).then(function (j) {
       cache[k] = { text: j.text, at: j.created_at || new Date().toISOString() }; keep();
+      if (j.days) Estimates.put(j.days);
     }, function (e) {
       errors[k] = e.auth ? 'You are signed out. Sign in again under Trackers.'
         : e.message === 'Failed to fetch' || e.name === 'TypeError' ? 'No connection. Try again when you are online.'
@@ -1241,7 +1308,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.5.</p>';
+    '. Version 0.6.</p>';
   return html + '</main>';
 }
 function accountCard() {
@@ -2091,7 +2158,7 @@ var Cloud = (function () {
     state = emptyState(); previousState = null;
     Store.save('diary', state); Store.save('previous', null);
     cleanupPhotos();
-    Claude.forget();
+    Claude.forget(); Estimates.forget();
     render();
   }
 
