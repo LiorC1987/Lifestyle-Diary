@@ -233,6 +233,88 @@ function weightUnit() {
 function toUnit(kg) { return weightUnit() === 'lb' ? kg * LB_PER_KG : kg; }
 function fromUnit(value) { return weightUnit() === 'lb' ? value / LB_PER_KG : value; }
 function fmtKg(kg) { return fmt1(toUnit(kg)) + ' ' + weightUnit(); }
+
+/* About you: birthday, height and sex, used only for the calorie estimate in reports. */
+function getSetting(name) { var s = state.settings.find(function (x) { return x.name === name; }); return s ? s.value : ''; }
+function setSetting(name, value) {
+  var s = state.settings.find(function (x) { return x.name === name; });
+  if (s) s.value = value; else state.settings.push({ name: name, value: value });
+}
+/* "175", "175 cm", "1.75", "5'9", "5 ft 9 in" → centimeters, or null. */
+function parseHeight(text) {
+  var t = String(text || '').trim().toLowerCase(), m;
+  if (!t) return null;
+  if ((m = t.match(/^(\d+(?:\.\d+)?)\s*(?:'|’|ft|feet|foot)\s*(?:(\d+(?:\.\d+)?)\s*(?:"|”|''|in|inch|inches)?)?$/))) {
+    var cm = (Number(m[1]) * 12 + Number(m[2] || 0)) * 2.54;
+    return cm >= 90 && cm <= 250 ? Math.round(cm) : null;
+  }
+  if ((m = t.match(/^(\d+(?:\.\d+)?)\s*(cm|m)?$/))) {
+    var v = Number(m[1]);
+    if (m[2] === 'm' || (!m[2] && v < 3)) v *= 100;
+    return v >= 90 && v <= 250 ? Math.round(v) : null;
+  }
+  return null;
+}
+function fmtHeight(cm) {
+  if (weightUnit() === 'lb') { var inch = Math.round(cm / 2.54); return Math.floor(inch / 12) + '′' + (inch % 12) + '″'; }
+  return cm + ' cm';
+}
+function ageOn(birthday, iso) {
+  if (!/^\d{4}-\d\d-\d\d$/.test(birthday || '')) return null;
+  var b = birthday.split('-').map(Number), d = iso.split('-').map(Number);
+  var age = d[0] - b[0] - (d[1] < b[1] || (d[1] === b[1] && d[2] < b[2]) ? 1 : 0);
+  return age >= 0 && age < 130 ? age : null;
+}
+/* The weight closest to a date: the last one on or before it, otherwise the first one after. */
+function weightNear(iso) {
+  var all = sortedWeights(), before = all.filter(function (w) { return w.localDate <= iso; });
+  return before.length ? before[before.length - 1] : all[0] || null;
+}
+/* Resting energy by the Mifflin-St Jeor formula, in kcal a day. */
+function restingEnergy(kg, cm, age, sex) {
+  var base = 10 * kg + 6.25 * cm - 5 * age;
+  return Math.round((base + (sex === 'male' ? 5 : sex === 'female' ? -161 : -78)) / 10) * 10;
+}
+function profileOf(endIso) {
+  var cm = Number(getSetting('profile.heightCm')) || null, age = ageOn(getSetting('profile.birthday'), endIso);
+  var w = weightNear(endIso), sex = getSetting('profile.sex');
+  var p = { cm: cm, age: age, weight: w, sex: sex };
+  p.complete = !!(cm && age != null && w);
+  p.rest = p.complete ? restingEnergy(w.kg, cm, age, sex) : null;
+  return p;
+}
+function profileSheet() {
+  var cm = Number(getSetting('profile.heightCm')) || null, sex = getSetting('profile.sex');
+  function sexRadio(v, label) {
+    return '<label class="seg" style="display:flex;align-items:center;justify-content:center;gap:6px;font-weight:500;color:var(--ink)"><input type="radio" name="sex" value="' + v + '"' +
+      (sex === v ? ' checked' : '') + ' style="width:auto;min-height:0;margin:0">' + label + '</label>';
+  }
+  openSheet({
+    title: 'About you',
+    body: '<p class="cap">Used only to estimate the calories you burn, in reports and Claude summaries. Each is optional.</p>' +
+      field('Birthday', '<input name="birthday" type="date" max="' + todayIso() + '" value="' + esc(getSetting('profile.birthday')) + '">') +
+      field(weightUnit() === 'lb' ? 'Height, for example 5\'9"' : 'Height in cm, for example 175',
+        '<input name="height" type="text" inputmode="decimal" autocomplete="off" value="' + esc(cm ? (weightUnit() === 'lb' ? Math.floor(Math.round(cm / 2.54) / 12) + '\'' + (Math.round(cm / 2.54) % 12) + '"' : String(cm)) : '') + '">') +
+      '<div class="field">Sex, for the calorie formula<div class="row">' + sexRadio('female', 'Female') + sexRadio('male', 'Male') + '</div>' +
+      '<div class="row">' + sexRadio('', 'Prefer not to say') + '</div></div>',
+    onSubmit: function (v) {
+      var h = v.height.trim() ? parseHeight(v.height) : null;
+      if (v.height.trim() && !h) { toast(weightUnit() === 'lb' ? 'Enter the height like 5\'9"' : 'Enter the height in centimeters, like 175'); return false; }
+      if (v.birthday && (v.birthday > todayIso() || ageOn(v.birthday, todayIso()) == null)) { toast('Check the birthday'); return false; }
+      setSetting('profile.birthday', v.birthday || '');
+      setSetting('profile.heightCm', h ? String(h) : '');
+      setSetting('profile.sex', v.sex || '');
+      commit();
+    }
+  });
+}
+function profileLabel() {
+  var bits = [], cm = Number(getSetting('profile.heightCm')), b = getSetting('profile.birthday'), sex = getSetting('profile.sex');
+  if (b) bits.push('Age ' + ageOn(b, todayIso()));
+  if (cm) bits.push(fmtHeight(cm));
+  if (sex) bits.push(sex === 'male' ? 'Male' : 'Female');
+  return bits.length ? bits.join(' · ') : 'Add birthday and height for calorie estimates';
+}
 function fmtNumber(v) { return v === Math.floor(v) ? String(v) : fmt1(v); }
 function parseNumber(s) { var v = parseFloat(String(s).trim().replace(',', '.')); return isFinite(v) ? v : null; }
 function average(xs) { return xs.reduce(function (a, b) { return a + b; }, 0) / xs.length; }
@@ -1050,9 +1132,26 @@ function buildReport(attached) {
         : ' Give averages only, per day with meals logged, as a short list: calories (kcal), protein (g), ' + split + '. Say how many days had meals logged, and mention days that look clearly higher or lower than the rest.') +
       ' Name meals you could not judge, for example where the portion size is missing. End the section with this sentence: "' + NUTRITION_NOTE + '" If no meals are logged, leave the section out.');
   }
+  var prof = profileOf(end);
+  if (isOn(KEYS.FOOD) && prof.complete) {
+    L.push('- Then a section called "Calorie balance". Estimate the calories I burned: start from the resting energy under "About me", add about 20% of it for everyday movement (a mostly sitting day), and add each logged activity, estimated from its type, duration and my weight.' +
+      (ui.period === 'day'
+        ? ' Show a small table with rows: Eaten (the total from the nutrition estimate), Resting energy, Everyday movement, one row per logged activity, Total burned, and Balance (eaten minus burned, + for a surplus, − for a deficit).'
+        : ' Show a small table with one row per day with meals logged, columns: day, eaten, burned, balance (+ for a surplus, − for a deficit), and a last row with the average.') +
+      ' Where meals look incompletely logged, or the day is not over yet, say so instead of reading it as a deficit. End the section with this sentence: "' + NUTRITION_NOTE + '"');
+  } else if (isOn(KEYS.FOOD)) {
+    L.push('- Do not estimate calories burned, because my ' + [prof.age == null ? 'age' : '', !prof.cm ? 'height' : '', !prof.weight ? 'weight' : ''].filter(Boolean).join(' and ') +
+      ' is missing. Mention once, in one sentence, that adding ' + (!prof.weight && (prof.age == null || !prof.cm) ? 'them under Trackers → About you and logging a weight' : !prof.weight ? 'a weight entry' : 'them under Trackers → About you') + ' would allow a calorie-balance estimate.');
+  }
   L.push('- Keep "What stood out" and "Worth trying" under about 200 words together' + (isOn(KEYS.FOOD) ? '; the nutrition estimate comes on top of that' : '') + '. I may ask follow-up questions afterwards.', '');
   L.push('Mood is recorded on a scale from 1 (low) to 5 (great). Sleep is the time slept the night before each date. Weeks run Sunday to Saturday.', '');
 
+  if (isOn(KEYS.FOOD) && prof.complete) {
+    L.push('## About me', '');
+    L.push('- Age: ' + prof.age + ', height: ' + prof.cm + ' cm, weight: ' + fmt1(prof.weight.kg) + ' kg (logged ' + dayMonth(prof.weight.localDate) + ')' +
+      (prof.sex ? ', sex: ' + prof.sex : ', sex not given'));
+    L.push('- Resting energy (Mifflin-St Jeor formula' + (prof.sex ? '' : ', midway between the male and female versions') + '): about ' + prof.rest + ' kcal a day', '');
+  }
   L.push('## Figures calculated by the app', '');
   figureRows(ui.period, f).forEach(function (r) { L.push('- ' + r[0] + ': ' + r[1]); });
   var prevRows = figureRows(ui.period, prev);
@@ -1123,6 +1222,9 @@ function viewTrackers() {
     seg('weightUnit', 'kg', 'Kilograms (kg)', weightUnit() === 'kg') + seg('weightUnit', 'lb', 'Pounds (lb)', weightUnit() === 'lb') +
     '</div><p class="cap mt8">Weights are kept exactly; this only changes how they are shown and entered.</p></section>';
 
+  html += '<section class="card flush" aria-label="About you"><button class="item" data-act="editProfile"><span class="grow"><span class="title">About you</span><br><span class="sub">' +
+    esc(profileLabel()) + '</span></span>' + ICON.chev + '</button></section>';
+
   if (Cloud.configured() && !PREVIEW) {
     html += '<section class="card flush" aria-label="Claude summaries"><div class="item"><span class="grow"><span class="title">Claude summaries</span><br><span class="sub">' +
       (Cloud.signedIn() ? 'Get a summary written right on the Summary page. When you tap Ask Claude, that period\'s entries and meal photos are sent to Claude.'
@@ -1139,7 +1241,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.4.2.</p>';
+    '. Version 0.5.</p>';
   return html + '</main>';
 }
 function accountCard() {
@@ -2108,6 +2210,7 @@ var actions = {
   },
   toggleCustom: function (d) { var t = byId(state.customTrackers, d.key); if (t) { t.enabled = !t.enabled; commit(); } },
   addTracker: function () { trackerSheet(null); },
+  editProfile: function () { profileSheet(); },
   editTracker: function (d) { trackerSheet(d.id); },
   backup: function () {
     var count = Object.keys(mealPhotos(state)).length;
