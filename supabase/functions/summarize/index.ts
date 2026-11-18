@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
   const claude = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: 1500, system: SYSTEM, messages: [{ role: "user", content }] }),
+    body: JSON.stringify({ model: MODEL, max_tokens: 6000, system: SYSTEM, messages: [{ role: "user", content }] }),
   });
   const answer = await claude.json().catch(() => ({}));
   if (!claude.ok) {
@@ -107,10 +107,12 @@ Deno.serve(async (req) => {
   }
   const text = (answer.content || []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n").trim();
   if (!text) return fail(502, "Claude sent back an empty summary. Try again.");
+  // Room for Claude's thinking plus the answer is generous, but say so if it still ran out.
+  const finalText = answer.stop_reason === "max_tokens" ? text + "\n\n*This summary was cut short. Tap Ask again for the full version.*" : text;
 
   // Keep it, so it shows again next time without asking Claude.
   const row = {
-    user_id: uid, period, start_date: start, end_date: end, text, model: answer.model || MODEL,
+    user_id: uid, period, start_date: start, end_date: end, text: finalText, model: answer.model || MODEL,
     input_tokens: answer.usage?.input_tokens ?? null, output_tokens: answer.usage?.output_tokens ?? null,
   };
   const saveHeaders: Record<string, string> = { apikey: SECRET, "Content-Type": "application/json", Prefer: "return=representation" };
@@ -120,5 +122,5 @@ Deno.serve(async (req) => {
   if (saved.ok) { const rows = await saved.json(); if (rows?.[0]?.created_at) createdAt = rows[0].created_at; }
   else console.error("Could not save summary", saved.status, await saved.text());
 
-  return reply(200, { text, created_at: createdAt, period, start });
+  return reply(200, { text: finalText, created_at: createdAt, period, start });
 });
