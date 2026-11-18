@@ -1043,13 +1043,14 @@ function buildReport(attached) {
       (attached.length ? ' and the photos' : '') + '. Then compare my mood on days with and without sweets, and on the day after a day with sweets. Name the sweets you counted, so I can correct you. With fewer than about two weeks of meals and mood, say it is too early to tell rather than guessing.');
   }
   if (isOn(KEYS.FOOD)) {
-    L.push('- Then a section called "Nutrition estimate". Estimate the calories and nutrients of the meals from their descriptions' + (attached.length ? ' and photos' : '') +
-      (ui.period === 'day' ? ', as totals for the day.'
-        : ', in two columns: the total for the whole ' + ui.period + ', and the average per day with meals logged. Say how many days had meals logged, and mention days that look clearly higher or lower than the rest.') +
-      ' Give round numbers or ranges, as a short list (for a day) or a small table (for a week or month): calories (kcal); protein (g); carbohydrates (g), split into sugars (sweets and added sugar, and natural sugar such as fruit), starchy and complex carbohydrates, and fibre; fat (g), split into saturated, monounsaturated and polyunsaturated, and trans fat if any is likely; then other notable nutrients, such as salt (sodium) and any vitamins or minerals that look clearly high or low.' +
+    var split = 'carbohydrates split into sugars (sweets and added sugar, and natural sugar such as fruit), starchy and complex carbohydrates, and fibre; fat split into saturated, monounsaturated and polyunsaturated, and trans fat if any is likely; then other notable nutrients, such as salt (sodium) and any vitamins or minerals that look clearly high or low';
+    L.push('- Then a section called "Nutrition estimate". Estimate the calories and nutrients of the meals from their descriptions' + (attached.length ? ' and photos' : '') + '. Give round numbers or ranges.' +
+      (ui.period === 'day'
+        ? ' First a small table with one row per food or drink (split a meal into its items where you can tell them apart), with columns: item, kcal, protein (g), carbohydrates (g), fat (g); end the table with a row for the day\'s total. Then a short list for the day\'s total: ' + split + '.'
+        : ' Give averages only, per day with meals logged, as a short list: calories (kcal), protein (g), ' + split + '. Say how many days had meals logged, and mention days that look clearly higher or lower than the rest.') +
       ' Name meals you could not judge, for example where the portion size is missing. End the section with this sentence: "' + NUTRITION_NOTE + '" If no meals are logged, leave the section out.');
   }
-  L.push('- Keep "What stood out" and "Worth trying" under about 200 words together' + (isOn(KEYS.FOOD) ? '; the nutrition estimate is a short list on top of that' : '') + '. I may ask follow-up questions afterwards.', '');
+  L.push('- Keep "What stood out" and "Worth trying" under about 200 words together' + (isOn(KEYS.FOOD) ? '; the nutrition estimate comes on top of that' : '') + '. I may ask follow-up questions afterwards.', '');
   L.push('Mood is recorded on a scale from 1 (low) to 5 (great). Sleep is the time slept the night before each date. Weeks run Sunday to Saturday.', '');
 
   L.push('## Figures calculated by the app', '');
@@ -1138,7 +1139,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.4.1.</p>';
+    '. Version 0.4.2.</p>';
   return html + '</main>';
 }
 function accountCard() {
