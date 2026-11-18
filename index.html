@@ -146,7 +146,7 @@ svg{display:block}
 /* ------------------------------------------------------------------ setup */
 
 var CFG = window.LIFE_DIARY_CONFIG || {};
-var CLIENT_ID = String(CFG.googleClientId || '').trim();
+
 var PREVIEW = !!CFG.preview;   // a try-out copy where files cannot be saved and data is not kept safely
 var APP_TAG = 'LifeDiary';
 var COLLECTIONS = ['moods', 'sleeps', 'weights', 'meals', 'activities', 'notes', 'customTrackers', 'customValues', 'settings'];
@@ -289,7 +289,7 @@ function emptyState() {
   COLLECTIONS.forEach(function (k) { s[k] = []; });
   return s;
 }
-/* Accepts a diary from storage, a backup file (from this app or the Android app) or Google Drive. */
+/* Accepts a diary from storage, a backup file (from this app or the Android app) or the online account. */
 function normalize(obj) {
   var s = emptyState();
   COLLECTIONS.forEach(function (k) { if (obj && Array.isArray(obj[k])) s[k] = obj[k]; });
@@ -483,14 +483,14 @@ function byId(list, id) { return list.find(function (e) { return String(e.id) ==
 function removeFrom(key, entry) { state[key] = state[key].filter(function (e) { return e !== entry; }); }
 function sortedWeights() { return state.weights.slice().sort(function (a, b) { return a.measuredAt - b.measuredAt; }); }
 
-/* Call after every change: stamps the diary, saves it, queues a Drive sync and redraws. */
+/* Call after every change: stamps the diary, saves it, queues an online save and redraws. */
 function commit() {
   state.modifiedAt = Date.now();
   Store.save('diary', state);
-  Drive.localChanged();
+  Cloud.localChanged();
   render();
 }
-/* Swaps in a whole diary (restore or Drive), keeping the old one for "Undo last replace". */
+/* Swaps in a whole diary (restore or online account), keeping the old one for "Undo last replace". */
 function replaceState(next) {
   if (!isEmpty(state)) { previousState = state; Store.save('previous', state); }
   state = next;
@@ -574,10 +574,10 @@ function banners() {
   if (Store.backend() === 'memory' && !PREVIEW) {
     out += '<div class="banner note">This browser is not letting the app save data, so entries will be lost when the page closes. Open the app in your normal browser, outside private mode.</div>';
   }
-  if (Drive.needsSignIn()) {
-    out += '<button class="banner" data-act="driveConnect">Google Drive sync is paused. Tap to sign in and sync.</button>';
-  } else if (Drive.hasConflict()) {
-    out += '<button class="banner" data-act="driveSync">Google Drive has a different version of your diary. Tap to choose which one to keep.</button>';
+  if (Cloud.needsSignIn()) {
+    out += '<button class="banner" data-act="openAccount">You were signed out, so new entries are only on this device. Tap to sign in again.</button>';
+  } else if (Cloud.hasConflict()) {
+    out += '<button class="banner" data-act="cloudSync">Your account has a different version of your diary. Tap to choose which one to keep.</button>';
   }
   return out;
 }
@@ -594,6 +594,10 @@ function viewToday() {
   var html = header(d === today ? 'Today, ' + weekdayName(d) : weekdayName(d), dayMonth(d), '',
     iconBtn('dayPrev', 'left', 'Previous day') + iconBtn('dayNext', 'right', 'Next day', d >= today));
   html += '<main class="stack">' + banners();
+
+  if (Cloud.configured() && !Cloud.signedIn() && !Cloud.needsSignIn() && !PREVIEW) {
+    html += '<button class="banner" data-act="openAccount">Your diary is only on this device. Tap to sign in, so it is also kept safely online.</button>';
+  }
 
   if (!PREVIEW && lsGet('ld.tip', true) && isTouch() && !isStandalone()) {
     html += '<div class="banner note"><span class="strong">Add this app to your home screen</span> so it opens like an app and keeps its data safely. ' +
@@ -1004,40 +1008,44 @@ function viewTrackers() {
     seg('weightUnit', 'kg', 'Kilograms (kg)', weightUnit() === 'kg') + seg('weightUnit', 'lb', 'Pounds (lb)', weightUnit() === 'lb') +
     '</div><p class="cap mt8">Weights are kept exactly; this only changes how they are shown and entered.</p></section>';
 
-  html += '<section class="card flush" aria-label="Google Drive"><h2 class="label pad">Google Drive (optional)</h2>' + driveCard() + '</section>';
+  html += '<section class="card flush" id="account" aria-label="Account"><h2 class="label pad">Online account</h2>' + accountCard() + '</section>';
 
   var lastBackup = lsGet('ld.lastBackup', 0);
   html += '<section class="card flush" aria-label="Backup">' + (PREVIEW ? '' :
     '<button class="item" data-act="backup"><span class="grow"><span class="title">Back up diary</span><br><span class="sub">Save everything to a file. Last backup: ' + agoLabel(lastBackup) + '</span></span>' + ICON.chev + '</button>') +
     '<button class="item" data-act="restore"><span class="grow"><span class="title">Restore from backup</span><br><span class="sub">Replace this diary with a backup file</span></span>' + ICON.chev + '</button>' +
-    (previousState ? '<button class="item" data-act="undoReplace"><span class="grow"><span class="title">Undo last replace</span><br><span class="sub">Bring back the diary as it was before the last restore or Drive download</span></span>' + ICON.chev + '</button>' : '') +
+    (previousState ? '<button class="item" data-act="undoReplace"><span class="grow"><span class="title">Undo last replace</span><br><span class="sub">Bring back the diary as it was before the last restore or account download</span></span>' + ICON.chev + '</button>' : '') +
     '</section>';
 
-  html += '<p class="cap">Your diary is stored on this device' + (Drive.linked() ? ' and in your Google Drive' : '') +
-    '. Version 0.1.</p>';
+  html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
+    '. Version 0.3.</p>';
   return html + '</main>';
 }
-function driveCard() {
+function accountCard() {
   var pad14 = 'padding:4px 14px 14px';
   if (PREVIEW) return '<p class="cap" style="' + pad14 + '">Not available in this preview. It works once the app is hosted at its own address.</p>';
-  if (!Drive.configured()) {
-    return '<p class="cap" style="' + pad14 + '">Not set up on this copy of the app. Whoever hosts it needs to add a Google client ID first (see the README).</p>';
+  if (!Cloud.configured()) {
+    return '<p class="cap" style="' + pad14 + '">Not set up on this copy of the app. Whoever hosts it needs to add the Supabase address and key in config.js (see the README).</p>';
   }
-  if (!Drive.linked()) {
-    return '<div style="' + pad14 + '"><p>Keep a copy of your diary in your own Google Drive, so it survives a lost phone or cleared browser data. The app can only see the one file it creates.</p>' +
-      '<button class="btn primary block mt12" data-act="driveConnect">Connect Google Drive</button></div>';
+  var m = Cloud.meta();
+  if (!Cloud.signedIn()) {
+    return '<form id="account-form" style="' + pad14 + '" novalidate><p>Sign in to keep your diary online as well, so it survives a lost phone or cleared browser and appears on any device you sign in on. Each account sees only its own diary.</p>' +
+      '<div class="stack mt12">' +
+      field('Email', '<input id="acc-email" type="email" autocomplete="username" inputmode="email" value="' + esc(Cloud.typedEmail() || m.email || '') + '">') +
+      field('Password', '<input id="acc-password" type="password" autocomplete="current-password">') +
+      (Cloud.authError() ? '<p class="cap" style="color:var(--warn)">' + esc(Cloud.authError()) + '</p>' : '') +
+      '<div class="row"><button type="button" class="btn primary" data-act="cloudSignIn"' + (Cloud.busy() ? ' disabled' : '') + '>' + (Cloud.busy() ? 'Signing in…' : 'Sign in') + '</button>' +
+      '<button type="button" class="btn" data-act="cloudSignUp"' + (Cloud.busy() ? ' disabled' : '') + '>Create account</button></div>' +
+      '<p class="cap">New here? Type an email and a password of at least 6 characters and tap Create account. No email is sent.</p></div></form>';
   }
-  var m = Drive.meta();
-  var status = Drive.busy() ? 'Syncing…'
-    : Drive.needsSignIn() ? 'Paused: sign in to sync'
-    : Drive.hasConflict() ? 'Two versions: tap Sync now to choose one'
-    : Drive.error() ? 'Last sync failed: ' + Drive.error()
-    : 'Last synced ' + agoLabel(m.lastSyncAt) + (m.dirty ? ', changes waiting' : '');
-  return '<div style="' + pad14 + '"><p><span class="strong">' + (m.email ? 'Connected as ' + esc(m.email) : 'Connected') + '</span><br><span class="cap">' + esc(status) + '</span></p>' +
-    '<div class="row mt12"><button class="btn primary" data-act="' + (Drive.needsSignIn() ? 'driveConnect' : 'driveSync') + '"' + (Drive.busy() ? ' disabled' : '') + '>' +
-    (Drive.needsSignIn() ? 'Sign in' : 'Sync now') + '</button><button class="btn" data-act="driveDisconnect">Disconnect</button></div></div>' +
-    '<div class="item sep"><span class="grow"><span class="title">Sign in when the app opens</span><br><span class="sub">Google sign-ins last about an hour. With this on, the app renews it at start so syncing needs no taps.</span></span>' +
-    switchBtn('driveAuto', 'auto', 'Sign in when the app opens', m.auto) + '</div>';
+  var status = Cloud.busy() ? 'Saving…'
+    : Cloud.hasConflict() ? 'Two versions: tap Sync now to choose one'
+    : Cloud.error() ? 'Last sync failed: ' + Cloud.error()
+    : m.lastSyncAt ? 'Saved online ' + agoLabel(m.lastSyncAt) + (m.dirty ? ', newer changes waiting' : '')
+    : 'Not saved online yet';
+  return '<div style="' + pad14 + '"><p><span class="strong">Signed in as ' + esc(m.email) + '</span><br><span class="cap">' + esc(status) + '</span></p>' +
+    '<div class="row mt12"><button class="btn primary" data-act="cloudSync"' + (Cloud.busy() ? ' disabled' : '') + '>Sync now</button>' +
+    '<button class="btn" data-act="cloudSignOut">Sign out</button></div></div>';
 }
 
 /* ------------------------------------------------------------------ weight */
@@ -1601,94 +1609,106 @@ document.getElementById('restore-file').addEventListener('change', function (e) 
       photoNames.forEach(function (n) { Photos.add(n, photos[n]); });
       next.modifiedAt = Date.now();
       replaceState(next);
-      Drive.localChanged();
+      Cloud.localChanged();
       toast('Diary restored from backup');
     });
   };
   reader.readAsText(file);
 });
 
-/* ------------------------------------------------------------ Google Drive */
+/* ---------------------------------------------------------- online account */
 
-/* Optional sync with one file in the user's own Google Drive. Sign-in uses
-   Google's redirect flow for browser-only apps: the page goes to Google and
-   comes back with a one-hour access token in the address. No server involved. */
-var Drive = (function () {
-  var SCOPE = 'https://www.googleapis.com/auth/drive.file';
-  var FILE_NAME = 'life-diary.json';
-  var API = 'https://www.googleapis.com/drive/v3/';
-  var UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
-  var FOLDER_NAME = 'Life Diary', FOLDER_TYPE = 'application/vnd.google-apps.folder';
-  var blank = { linked: false, email: '', fileId: '', folderId: '', remoteModifiedAt: 0, dirty: false, conflict: false, lastSyncAt: 0, auto: true, lastSilentAt: 0 };
-  var meta = Object.assign({}, blank, lsGet('ld.sync', {}));
-  var token = lsGet('ld.token', null);
-  var busy = false, again = false, lastError = '', timer = null, manual = false, deferred = false;
+/* Online account (Supabase). The master copy of the diary is one row in the
+   "diaries" table, and photos are files in the private "photos" bucket under the
+   person's own folder. The database lets each signed-in person read and write
+   only their own row and folder. This device keeps a working copy, so the app
+   also works offline; changes are sent a few seconds after they are made. */
+var Cloud = (function () {
+  var BASE = String(CFG.supabaseUrl || '').trim().replace(/\/+$/, '');
+  var KEY = String(CFG.supabaseKey || '').trim();
+  var blank = { userId: '', email: '', remoteModifiedAt: 0, dirty: false, conflict: false, lastSyncAt: 0 };
+  var meta = Object.assign({}, blank, lsGet('ld.cloud', {}));
+  var session = lsGet('ld.session', null);   // { access, refresh, expiresAt, userId, email }
+  var busy = false, again = false, lastError = '', authErr = '', timer = null, manual = false, deferred = false, refreshing = null;
+  var typedEmail = '';   // kept so a redraw of the sign-in form does not wipe it
 
-  function saveMeta() { lsSet('ld.sync', meta); }
-  function tokenValid() { return !!(token && token.expiresAt > Date.now()); }
-  function redirectUri() { return CFG.redirectUri || (location.origin + location.pathname.replace(/index\.html$/, '')); }
+  function configured() { return !!(BASE && KEY); }
+  function saveMeta() { lsSet('ld.cloud', meta); }
+  function signedIn() { return configured() && !!(session && session.refresh && meta.userId === session.userId); }
+  function authFailure() { var e = new Error('Signed out'); e.auth = true; return e; }
+  function readJson(r) { return r.text().then(function (t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return {}; } }); }
 
-  function beginAuth(silent) {
-    var stateToken = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    lsSet('ld.oauth', { state: stateToken, silent: !!silent });
-    var p = { client_id: CLIENT_ID, redirect_uri: redirectUri(), response_type: 'token', scope: SCOPE, include_granted_scopes: 'true', state: stateToken };
-    if (meta.email) p.login_hint = meta.email;
-    if (silent) p.prompt = 'none';
-    var query = Object.keys(p).map(function (k) { return k + '=' + encodeURIComponent(p[k]); }).join('&');
-    Store.flush().then(function () { location.assign('https://accounts.google.com/o/oauth2/v2/auth?' + query); });
+  function authRequest(path, body) {
+    return fetch(BASE + '/auth/v1/' + path, {
+      method: 'POST', headers: { apikey: KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    }).then(function (r) {
+      return readJson(r).then(function (j) {
+        if (!r.ok) {
+          var e = new Error(j.msg || j.error_description || j.message || ('Sign-in failed (' + r.status + ')'));
+          e.status = r.status; e.code = j.error_code || j.error || '';
+          throw e;
+        }
+        return j;
+      });
+    });
   }
-
-  /* Reads the token (or error) Google put in the address after a sign-in. */
-  function handleReturn() {
-    var hash = location.hash.slice(1);
-    if (!hash || (hash.indexOf('access_token=') < 0 && hash.indexOf('error=') < 0)) return null;
-    var p = {};
-    hash.split('&').forEach(function (kv) { var i = kv.indexOf('='); if (i > 0) p[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1).replace(/\+/g, ' ')); });
-    var pending = lsGet('ld.oauth', null);
-    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; }
-    lsSet('ld.oauth', null);
-    if (!pending || pending.state !== p.state) return null;
-    if (p.access_token) {
-      token = { value: p.access_token, expiresAt: Date.now() + (Number(p.expires_in) || 3600) * 1000 - 60000 };
-      lsSet('ld.token', token);
-      if (!meta.linked) { meta.linked = true; meta.dirty = !isEmpty(state); }
-      saveMeta();
-      return 'token';
+  function keepSession(j) {
+    var user = j.user || {};
+    session = {
+      access: j.access_token, refresh: j.refresh_token,
+      expiresAt: Date.now() + (Number(j.expires_in) || 3600) * 1000 - 60000,
+      userId: user.id || (session && session.userId), email: user.email || (session && session.email)
+    };
+    lsSet('ld.session', session);
+  }
+  /* A valid access token, renewed with the long-lived refresh token when it has run out. */
+  function freshToken() {
+    if (!session) return Promise.reject(authFailure());
+    if (session.expiresAt > Date.now()) return Promise.resolve(session.access);
+    if (!refreshing) {
+      refreshing = authRequest('token?grant_type=refresh_token', { refresh_token: session.refresh }).then(function (j) {
+        refreshing = null; keepSession(j); return session.access;
+      }, function (e) {
+        refreshing = null;
+        if (e.status >= 400 && e.status < 500) { session = null; lsSet('ld.session', null); throw authFailure(); }
+        throw e;   // no connection: try again later
+      });
     }
-    if (!pending.silent) toast(p.error === 'access_denied' ? 'Google sign-in was cancelled' : 'Google sign-in failed: ' + p.error);
-    return 'error';
+    return refreshing;
   }
-
-  function api(url, opts) {
+  function api(path, opts) {
     opts = opts || {};
-    opts.headers = Object.assign({}, opts.headers, { Authorization: 'Bearer ' + token.value });
-    return fetch(url, opts).then(function (r) {
-      if (r.status === 401) { token = null; lsSet('ld.token', null); var a = new Error('Sign-in expired'); a.auth = true; throw a; }
-      if (!r.ok) { var e = new Error('Google Drive answered ' + r.status); e.status = r.status; throw e; }
+    return freshToken().then(function (token) {
+      opts.headers = Object.assign({ apikey: KEY, Authorization: 'Bearer ' + token }, opts.headers);
+      return fetch(BASE + path, opts);
+    }).then(function (r) {
+      if (r.status === 401) { session.expiresAt = 0; lsSet('ld.session', session); again = true; throw new Error('sign-in renewed, trying again'); }
+      if (!r.ok) {
+        return readJson(r).then(function (j) {
+          var e = new Error(j.message || j.msg || j.error || ('the server answered ' + r.status)); e.status = r.status; throw e;
+        });
+      }
       return r;
     });
   }
-  function fetchRemote(id) { return api(API + 'files/' + id + '?alt=media').then(function (r) { return r.json(); }).then(normalize); }
-  function findFile() {
-    var q = encodeURIComponent("name='" + FILE_NAME + "' and trashed=false");
-    return api(API + 'files?q=' + q + '&spaces=drive&orderBy=modifiedTime%20desc&fields=files(id)').then(function (r) { return r.json(); })
-      .then(function (j) { return j.files && j.files.length ? j.files[0].id : ''; });
-  }
-  function upload(id, data) {
-    var body = JSON.stringify(data);
-    if (id) {
-      return api(UPLOAD + '/' + id + '?uploadType=media', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: body }).then(function () { return id; });
-    }
-    var boundary = 'lifediary' + Date.now();
-    var multi = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify({ name: FILE_NAME, mimeType: 'application/json', parents: meta.folderId ? [meta.folderId] : undefined }) +
-      '\r\n--' + boundary + '\r\nContent-Type: application/json\r\n\r\n' + body + '\r\n--' + boundary + '--';
-    return api(UPLOAD + '?uploadType=multipart&fields=id', { method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + boundary }, body: multi })
-      .then(function (r) { return r.json(); }).then(function (j) { return j.id; });
+
+  function uid() { return session.userId; }
+  function fetchRemote() {
+    return api('/rest/v1/diaries?select=data,modified_at&user_id=eq.' + encodeURIComponent(uid())).then(readJson).then(function (rows) {
+      if (!Array.isArray(rows) || !rows.length || !rows[0].data) return null;
+      var remote = normalize(rows[0].data);
+      remote.modifiedAt = Number(rows[0].modified_at) || remote.modifiedAt;
+      return remote;
+    });
   }
   function pushLocal() {
     var sentAt = state.modifiedAt || (state.modifiedAt = Date.now());
-    return upload(meta.fileId, state).then(function (id) {
-      meta.fileId = id; meta.remoteModifiedAt = sentAt;
+    return api('/rest/v1/diaries?on_conflict=user_id', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ user_id: uid(), data: state, modified_at: sentAt })
+    }).then(function () {
+      meta.remoteModifiedAt = sentAt;
       if (state.modifiedAt === sentAt) meta.dirty = false;
     });
   }
@@ -1697,96 +1717,74 @@ var Drive = (function () {
     meta.remoteModifiedAt = remote.modifiedAt; meta.dirty = false;
   }
 
-  function json(r) { return r.json(); }
-  /* Everything the app keeps in Drive goes into one folder, created on first use. */
-  function ensureFolder() {
-    var check = !meta.folderId ? Promise.resolve() : api(API + 'files/' + meta.folderId + '?fields=id,trashed').then(json)
-      .then(function (j) { if (j.trashed) meta.folderId = ''; }, function (e) { if (e.status === 404) meta.folderId = ''; else throw e; });
-    return check.then(function () {
-      if (meta.folderId) return null;
-      var q = encodeURIComponent("name='" + FOLDER_NAME + "' and mimeType='" + FOLDER_TYPE + "' and trashed=false");
-      return api(API + 'files?q=' + q + '&spaces=drive&fields=files(id)').then(json).then(function (j) {
-        if (j.files && j.files.length) { meta.folderId = j.files[0].id; return null; }
-        return api(API + 'files?fields=id', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: FOLDER_NAME, mimeType: FOLDER_TYPE }) })
-          .then(json).then(function (made) { meta.folderId = made.id; });
-      });
-    });
-  }
   function listPhotos() {
     var found = {};
-    var q = encodeURIComponent("'" + meta.folderId + "' in parents and trashed=false");
-    function page(tokenParam) {
-      return api(API + 'files?q=' + q + '&spaces=drive&pageSize=1000&fields=nextPageToken,files(id,name)' + tokenParam).then(json).then(function (j) {
-        (j.files || []).forEach(function (f) { if (/^ld-photo-/.test(f.name)) found[f.name] = f.id; });
-        return j.nextPageToken ? page('&pageToken=' + encodeURIComponent(j.nextPageToken)) : found;
+    function page(offset) {
+      return api('/storage/v1/object/list/photos', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefix: uid(), limit: 1000, offset: offset })
+      }).then(readJson).then(function (items) {
+        items = Array.isArray(items) ? items : [];
+        items.forEach(function (f) { var n = String(f.name || '').split('/').pop(); if (/^ld-photo-/.test(n)) found[n] = 1; });
+        return items.length === 1000 ? page(offset + 1000) : found;
       });
     }
-    return page('');
+    return page(0);
   }
+  function photoPath(name) { return encodeURIComponent(uid()) + '/' + encodeURIComponent(name); }
   function uploadPhoto(name) {
     return Store.load('photo:' + name).then(function (url) {
       if (!url) return null;
-      var boundary = 'lifediaryphoto' + Date.now();
-      var body = new Blob(['--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n',
-        JSON.stringify({ name: name, mimeType: 'image/jpeg', parents: [meta.folderId] }),
-        '\r\n--' + boundary + '\r\nContent-Type: image/jpeg\r\n\r\n', dataUrlToBlob(url), '\r\n--' + boundary + '--']);
-      return api(UPLOAD + '?uploadType=multipart&fields=id', { method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + boundary }, body: body });
+      return api('/storage/v1/object/photos/' + photoPath(name), {
+        method: 'POST', headers: { 'Content-Type': 'image/jpeg', 'x-upsert': 'true' }, body: dataUrlToBlob(url)
+      });
     });
   }
-  function downloadPhoto(name, id) {
-    return api(API + 'files/' + id + '?alt=media').then(function (r) { return r.blob(); }).then(blobToDataUrl)
-      .then(function (url) { return Photos.add(name, url); });
+  function downloadPhoto(name) {
+    return api('/storage/v1/object/authenticated/photos/' + photoPath(name)).then(function (r) { return r.blob(); })
+      .then(blobToDataUrl).then(function (url) { return Photos.add(name, url); });
   }
-  /* Uploads pictures Drive lacks, fetches ones this device lacks, and moves pictures
-     no meal uses any more to Drive's bin (where Google keeps them for a while). */
+  /* Uploads pictures the account lacks, fetches ones this device lacks, and
+     deletes pictures from the account that no meal uses any more. */
   function syncPhotos() {
     var wanted = mealPhotos(state), keep = Object.assign(mealPhotos(previousState), wanted);
     return Promise.all([listPhotos(), Photos.names()]).then(function (res) {
-      var remote = res[0], local = {}, chain = Promise.resolve();
+      var remote = res[0], local = {}, chain = Promise.resolve(), unused = [];
       res[1].forEach(function (n) { local[n] = 1; });
       Object.keys(wanted).forEach(function (n) {
         if (local[n] && !remote[n]) chain = chain.then(function () { return uploadPhoto(n); });
-        else if (!local[n] && remote[n]) chain = chain.then(function () { return downloadPhoto(n, remote[n]); });
+        else if (!local[n] && remote[n]) chain = chain.then(function () { return downloadPhoto(n); });
       });
-      Object.keys(remote).forEach(function (n) {
-        if (!keep[n] && !isEmpty(state)) {
-          chain = chain.then(function () {
-            return api(API + 'files/' + remote[n], { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) });
-          });
-        }
-      });
+      Object.keys(remote).forEach(function (n) { if (!keep[n] && !isEmpty(state)) unused.push(uid() + '/' + n); });
+      if (unused.length) {
+        chain = chain.then(function () {
+          return api('/storage/v1/object/photos', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prefixes: unused }) });
+        });
+      }
       return chain;
     });
   }
 
-  /* One sync pass: compare this device with the Drive file and move the newer one across. */
+  /* One sync pass: compare this device with the account and move the newer diary across. */
   function run() {
-    var loadEmail = meta.email ? Promise.resolve() : api(API + 'about?fields=user(emailAddress)').then(function (r) { return r.json(); })
-      .then(function (j) { meta.email = (j.user && j.user.emailAddress) || ''; }, function (e) { if (e.auth) throw e; });
-    return loadEmail.then(ensureFolder).then(function () {
-      if (!meta.fileId) return null;
-      return fetchRemote(meta.fileId).catch(function (e) { if (e.status === 404) { meta.fileId = ''; return null; } throw e; });
-    }).then(function (remote) {
-      if (remote || meta.fileId) return remote;
-      return findFile().then(function (id) { if (!id) return null; meta.fileId = id; return fetchRemote(id); });
-    }).then(function (remote) {
+    return fetchRemote().then(function (remote) {
       deferred = false;
       if (!remote) return pushLocal();
-      // This device lost its copy (for example the browser cleared its data): take Drive's.
+      // This device has no diary yet (new phone, cleared browser): take the account's.
       if (isEmpty(state) && !isEmpty(remote) && !meta.dirty) { adopt(remote); return null; }
       if (remote.modifiedAt === meta.remoteModifiedAt) return meta.dirty ? pushLocal() : null;
-      // The Drive copy changed since this device last saw it.
+      // The account's copy changed since this device last saw it.
       if (isEmpty(remote) && !isEmpty(state)) return pushLocal();
       if (!meta.dirty || isEmpty(state)) {
         if (sheet) { again = true; deferred = true; return null; }   // wait until the open form is closed
         adopt(remote);
         return null;
       }
-      // Both changed. Only ask when the user started this sync; otherwise show a banner.
+      // Both changed. Only ask when the person started this sync; otherwise show a banner.
       if (!manual || sheet) { meta.conflict = true; return null; }
       return askConflict(remote);
     }).then(function () {
-      // Photos follow the diary, so only once this device and Drive agree on it.
+      // Photos follow the diary, so only once this device and the account agree on it.
       return meta.conflict || deferred ? null : syncPhotos();
     });
   }
@@ -1796,11 +1794,11 @@ var Drive = (function () {
       openSheet({
         title: 'Two versions of your diary',
         autofocus: false,
-        body: '<p>This device and Google Drive both changed since they last synced. Choose which one to keep. The other is replaced.</p>' +
+        body: '<p>This device and your online account both have changes the other has not seen. Choose which one to keep. The other is replaced, and can be brought back once with Undo last replace.</p>' +
           '<p class="cap">This device: ' + plural(daysWithEntries(state), 'day', 'days') + ' with entries, changed ' + agoLabel(state.modifiedAt) + '.<br>' +
-          'Google Drive: ' + plural(daysWithEntries(remote), 'day', 'days') + ' with entries, changed ' + agoLabel(remote.modifiedAt) + '.</p>' +
+          'Online account: ' + plural(daysWithEntries(remote), 'day', 'days') + ' with entries, changed ' + agoLabel(remote.modifiedAt) + '.</p>' +
           '<button type="button" class="btn primary block" data-act="conflictLocal">Keep this device</button>' +
-          '<button type="button" class="btn block" data-act="conflictRemote">Keep Google Drive</button>',
+          '<button type="button" class="btn block" data-act="conflictRemote">Keep the online account</button>',
         choose: function (which) {
           if (done) return; done = true;
           closeSheet();
@@ -1813,54 +1811,88 @@ var Drive = (function () {
     });
   }
 
-  /* byUser is true when the person tapped Sync; timers and app start pass nothing. */
+  /* byUser is true when the person tapped Sync or just signed in; timers and app start pass nothing. */
   function sync(byUser) {
-    if (!CLIENT_ID || !meta.linked) return Promise.resolve();
-    if (!tokenValid()) { render(); return Promise.resolve(); }
+    if (!signedIn()) { render(); return Promise.resolve(); }
     if (busy) { again = true; return Promise.resolve(); }
     if (meta.conflict && !byUser) return Promise.resolve();
     busy = true; manual = !!byUser; lastError = ''; render();
     return run().then(function () { meta.lastSyncAt = Date.now(); }, function (e) {
-      lastError = e.auth ? '' : (e.message === 'Failed to fetch' ? 'no connection' : e.message || 'no connection');
+      lastError = e.auth ? '' : (e.message === 'Failed to fetch' || e.name === 'TypeError' ? 'no connection' : e.message || 'no connection');
     }).then(function () {
       busy = false; manual = false; saveMeta(); render();
-      if (again || (meta.dirty && !meta.conflict && tokenValid() && !lastError)) { again = false; schedule(1500); }
+      if (again || (meta.dirty && !meta.conflict && signedIn() && !lastError)) { again = false; schedule(1500); }
+      else if (lastError && meta.dirty) schedule(60000);   // keep trying while offline
     });
   }
   function schedule(ms) { clearTimeout(timer); timer = setTimeout(function () { sync(false); }, ms); }
 
+  function signIn(email, password, create) {
+    if (busy) return Promise.resolve();
+    authErr = ''; typedEmail = email;
+    if (!/^\S+@\S+\.\S+$/.test(email)) { authErr = 'Enter your email address.'; render(); return Promise.resolve(); }
+    if (password.length < 6) { authErr = 'The password needs at least 6 characters.'; render(); return Promise.resolve(); }
+    busy = true; render();
+    return authRequest(create ? 'signup' : 'token?grant_type=password', { email: email, password: password }).then(function (j) {
+      if (!j.access_token) throw new Error('The account was made, but it needs confirming by email first. In Supabase, switch off "Confirm email" and try again.');
+      var user = j.user || {};
+      if (meta.userId !== user.id) {
+        // Linking this device to an account: what is already here counts as new changes.
+        meta = Object.assign({}, blank, { userId: user.id, email: user.email, dirty: !isEmpty(state) });
+      }
+      meta.email = user.email || email;
+      keepSession(j);
+      saveMeta();
+      busy = false;
+      toast(create ? 'Account created. Your diary is being saved online.' : 'Signed in');
+      return sync(true);
+    }, function (e) {
+      busy = false;
+      authErr = e.code === 'invalid_credentials' || /invalid login/i.test(e.message) ? 'That email and password do not match an account.'
+        : e.code === 'user_already_exists' || /already registered/i.test(e.message) ? 'There is already an account with this email. Tap Sign in instead.'
+        : e.message === 'Failed to fetch' || e.name === 'TypeError' ? 'No connection. Try again when you are online.'
+        : e.message;
+      render();
+    });
+  }
+  /* Signing out removes the diary from this device; it stays in the account. */
+  function signOut() {
+    var token = session && session.access;
+    if (token && configured()) {
+      fetch(BASE + '/auth/v1/logout', { method: 'POST', headers: { apikey: KEY, Authorization: 'Bearer ' + token } }).catch(function () {});
+    }
+    clearTimeout(timer);
+    session = null; lsSet('ld.session', null);
+    meta = Object.assign({}, blank, { email: meta.email }); saveMeta();
+    lastError = ''; authErr = '';
+    state = emptyState(); previousState = null;
+    Store.save('diary', state); Store.save('previous', null);
+    cleanupPhotos();
+    render();
+  }
+
   return {
-    configured: function () { return !!CLIENT_ID; },
-    linked: function () { return !!CLIENT_ID && meta.linked; },
-    needsSignIn: function () { return !!CLIENT_ID && meta.linked && !tokenValid(); },
-    hasConflict: function () { return !!CLIENT_ID && meta.linked && meta.conflict && tokenValid(); },
+    configured: configured,
+    signedIn: signedIn,
+    needsSignIn: function () { return configured() && !!meta.userId && !signedIn(); },
+    hasConflict: function () { return signedIn() && meta.conflict; },
     busy: function () { return busy; },
     error: function () { return lastError; },
+    authError: function () { return authErr; },
+    typedEmail: function () { return typedEmail; },
     meta: function () { return meta; },
-    connect: function () { beginAuth(false); },
+    signIn: signIn,
+    signOut: signOut,
     sync: sync,
     syncNow: function () { return sync(true); },
-    handleReturn: handleReturn,
     localChanged: function () {
-      if (!meta.linked) return;
+      // Changes made while signed out of a linked account still count, so they are sent after signing in again.
+      if (!configured() || !meta.userId) return;
       meta.dirty = true; saveMeta();
-      if (tokenValid()) schedule(4000);
+      if (signedIn()) schedule(4000);
     },
-    setAuto: function (on) { meta.auto = on; saveMeta(); },
-    disconnect: function () {
-      meta = Object.assign({}, blank); token = null; lastError = '';
-      saveMeta(); lsSet('ld.token', null);
-    },
-    /* At start: renew an expired sign-in without asking, at most once every ten minutes. */
-    start: function (cameBack) {
-      if (!CLIENT_ID || !meta.linked) return;
-      if (tokenValid()) { sync(false); return; }
-      if (!cameBack && meta.auto && navigator.onLine !== false && Date.now() - meta.lastSilentAt > 600000) {
-        meta.lastSilentAt = Date.now(); saveMeta();
-        beginAuth(true);
-      }
-    },
-    resumed: function () { if (meta.linked && tokenValid() && !busy && Date.now() - meta.lastSyncAt > 60000) sync(false); }
+    start: function () { if (signedIn()) sync(false); },
+    resumed: function () { if (signedIn() && !busy && Date.now() - meta.lastSyncAt > 60000) sync(false); }
   };
 })();
 
@@ -1977,21 +2009,31 @@ var actions = {
   backupSave: function () { var text = sheet && sheet.prepared; closeSheet(); if (text) saveBackup(text); },
   restore: function () { document.getElementById('restore-file').click(); },
   undoReplace: function () {
-    confirmSheet('Undo last replace?', 'The diary goes back to how it was before the last restore or Drive download.', 'Undo', function () {
+    confirmSheet('Undo last replace?', 'The diary goes back to how it was before the last restore or account download.', 'Undo', function () {
       if (!previousState) { toast('Nothing to undo'); return; }
       var current = state;
       state = previousState; state.modifiedAt = Date.now();
       previousState = current;
       Store.save('diary', state); Store.save('previous', current);
-      Drive.localChanged(); render(); toast('Previous diary brought back');
+      Cloud.localChanged(); render(); toast('Previous diary brought back');
     });
   },
-  driveConnect: function () { Drive.connect(); },
-  driveSync: function () { Drive.syncNow(); },
-  driveDisconnect: function () {
-    confirmSheet('Disconnect Google Drive?', 'Syncing stops. Your diary stays on this device, and the file already in your Drive is left as it is.', 'Disconnect', function () { Drive.disconnect(); render(); });
+  openAccount: function () {
+    ui.tab = 'trackers'; ui.showWeight = false; render();
+    var card = document.getElementById('account');
+    if (card) card.scrollIntoView({ block: 'start' });
+    var email = document.getElementById('acc-email');
+    if (email && !email.value) email.focus();
   },
-  driveAuto: function () { Drive.setAuto(!Drive.meta().auto); render(); },
+  cloudSignIn: function () { accountSubmit(false); },
+  cloudSignUp: function () { accountSubmit(true); },
+  cloudSync: function () { Cloud.syncNow(); },
+  cloudSignOut: function () {
+    var dirty = Cloud.meta().dirty;
+    confirmSheet('Sign out?', dirty
+      ? 'Some recent changes have not reached your account yet (no connection?). Signing out now removes them for good. Better to tap Sync now first.'
+      : 'Your diary is removed from this device. It stays in your account and comes back when you sign in again.', 'Sign out', function () { Cloud.signOut(); });
+  },
   conflictLocal: function () { if (sheet && sheet.choose) sheet.choose('local'); },
   conflictRemote: function () { if (sheet && sheet.choose) sheet.choose('remote'); },
 
@@ -2011,6 +2053,15 @@ document.addEventListener('click', function (e) {
   if (fn) fn(el.dataset, el);
 });
 
+function accountSubmit(create) {
+  var email = document.getElementById('acc-email'), password = document.getElementById('acc-password');
+  if (email && password) Cloud.signIn(email.value.trim(), password.value, create);
+}
+/* Enter in the password field signs in. */
+document.addEventListener('submit', function (e) {
+  if (e.target.id === 'account-form') { e.preventDefault(); accountSubmit(false); }
+});
+
 /* ------------------------------------------------------------------- start */
 
 Store.init().then(function () {
@@ -2019,9 +2070,8 @@ Store.init().then(function () {
   if (loaded[0]) state = normalize(loaded[0]);
   previousState = loaded[1] ? normalize(loaded[1]) : null;
   cleanupPhotos();
-  var returned = Drive.handleReturn();
   render();
-  Drive.start(returned != null);
+  Cloud.start();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
 });
 
@@ -2030,16 +2080,25 @@ document.addEventListener('visibilitychange', function () {
   // A new day may have started while the app was in the background.
   if (ui.tab === 'today' && !sheet && lsGet('ld.lastSeenDay', '') !== todayIso()) { ui.date = todayIso(); ui.anchor = todayIso(); render(); }
   lsSet('ld.lastSeenDay', todayIso());
-  Drive.resumed();
+  Cloud.resumed();
 });
 lsSet('ld.lastSeenDay', todayIso());
 
 if (!PREVIEW && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-  navigator.serviceWorker.register('sw.js').catch(function () {});
+  // When a new version of the app has been installed, switch to it at once, unless a form is open.
+  var hadController = !!navigator.serviceWorker.controller, reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (!hadController || reloading) return;
+    var reload = function () { if (!sheet) { reloading = true; Store.flush().then(function () { location.reload(); }); } else setTimeout(reload, 2000); };
+    reload();
+  });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') reg.update().catch(function () {}); });
+  }).catch(function () {});
 }
 
 /* Used by the automated tests only. */
-window.__lifeDiary = { getState: function () { return state; }, buildReport: buildReport, drive: Drive };
+window.__lifeDiary = { getState: function () { return state; }, buildReport: buildReport, cloud: Cloud };
 
 })();
 </script>

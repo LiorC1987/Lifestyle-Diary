@@ -1,12 +1,13 @@
 /* Keeps a copy of the app's own files so it opens without a connection.
    Diary data is never stored here. Raise the version to force a refresh. */
-var CACHE = 'life-diary-v5';
+var CACHE = 'life-diary-v6';
 var FILES = ['./', 'index.html', 'config.js', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', function (event) {
   event.waitUntil(
     caches.open(CACHE).then(function (cache) {
-      return Promise.all(FILES.map(function (f) { return cache.add(f).catch(function () {}); }));
+      // cache: 'reload' skips the browser's own cache, so a new version stores new files.
+      return Promise.all(FILES.map(function (f) { return cache.add(new Request(f, { cache: 'reload' })).catch(function () {}); }));
     }).then(function () { return self.skipWaiting(); })
   );
 });
@@ -28,7 +29,7 @@ self.addEventListener('fetch', function (event) {
       var fromCache = cache.match(req, { ignoreSearch: true }).then(function (hit) {
         return hit || (req.mode === 'navigate' ? cache.match('./') : undefined);
       });
-      var fromNetwork = fetch(req).then(function (res) {
+      var fromNetwork = fetch(req, { cache: 'no-cache' }).then(function (res) {
         if (res && res.ok) cache.put(req, res.clone());
         return res;
       });

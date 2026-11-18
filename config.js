@@ -1,10 +1,11 @@
 /* Settings for this copy of Life Diary.
 
-   googleClientId: leave empty to run without Google Drive. To switch Drive
-   sync on, paste the OAuth client ID from Google Cloud between the quotes
-   (it ends in .apps.googleusercontent.com). See README.md for the steps.
-
-   The client ID is not a secret; it only identifies the app to Google. */
+   supabaseUrl and supabaseKey connect the app to its online accounts
+   (Supabase). Leave them empty to run with the diary on the device only.
+   The key is the project's public "publishable" (or "anon") key: it is meant
+   to be in web pages, and the database rules decide what each signed-in
+   person may read. Never put a secret or service-role key here. */
 window.LIFE_DIARY_CONFIG = {
-  googleClientId: ""
+  supabaseUrl: "",
+  supabaseKey: ""
 };

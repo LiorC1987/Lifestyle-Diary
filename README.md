@@ -6,7 +6,7 @@ The same diary as the Android app, built as a web page that works on any phone, 
 - Weights can be shown and entered in **kilograms or pounds** (Trackers > Weight unit). They are always stored in kilograms, so switching never changes them.
 - Activities are picked from a list of common ones, or typed under **Other…**; durations from 15 min, 30 min, 1 h, 1 h 30 min and 2 h, or typed (45, 1:15, 1h 20).
 - A meal can have a **photo**, taken with the camera or picked from the gallery, with or without text. Photos are shrunk to about 1280 pixels (typically 100 to 300 KB each) before they are stored.
-- Optionally, each person can link **their own Google Drive**, and the app keeps a copy of the diary and its photos there.
+- Each person can sign in to an **online account**, which keeps the diary and its photos safe and in step across devices (see section 3).
 - The web host only serves the app's files. No diary data is ever sent to it.
 
 Nothing needs to be built or installed.
@@ -30,42 +30,16 @@ Open the address in the phone's browser, then add it to the home screen:
 - **iPhone:** open it in Safari, tap the Share button, then **Add to Home Screen**. Always use the home-screen icon afterwards. This matters: an iPhone can erase data from pages that are only opened in a Safari tab and not visited for a week.
 - **Android:** in Chrome, open the menu and choose **Add to Home screen** or **Install app**.
 
-## 3. Switch on Google Drive (optional)
+## 3. Online accounts (Supabase)
 
-Without this step the app works fully, and the Google Drive card says it is not set up.
+Each person can sign in with an email and a password (Trackers > Online account). The diary and its photos are then saved online a few seconds after every change, and come back on any device signed in to the same account. The phone keeps a working copy, so the app also works offline and catches up later.
 
-Google requires whoever hosts the app to register it once. It is free and takes about ten minutes. Google's screens change from time to time, so names may differ slightly.
-
-1. Go to console.cloud.google.com, sign in, and create a **new project** (any name).
-2. In **APIs & Services > Library**, find **Google Drive API** and press **Enable**.
-3. Open **Google Auth Platform** (formerly "OAuth consent screen") and fill in the basics: an app name, your email address, and audience type **External**.
-4. Under **Audience**, add the Gmail address of each person who will use Drive sync (yours and your sister's) as **test users**.
-5. Under **Clients**, create a client of type **Web application**:
-   - **Authorized JavaScript origins:** `https://liorc1987.github.io` (no folder, no slash at the end)
-   - **Authorized redirect URIs:** `https://liorc1987.github.io/Lifestyle-Diary/` (with the folder and the slash at the end)
-6. Copy the **Client ID** (it ends in `.apps.googleusercontent.com`).
-7. Open `config.js` (here on GitHub: the file, then the pencil icon), paste the ID between the quotes after `googleClientId:`, and commit.
-
-In the app, Trackers > **Connect Google Drive** then takes each person through Google's sign-in.
-
-### Testing mode or published
-
-A new Google project starts in **Testing** mode:
-
-- Only the test users you listed can connect.
-- Google shows them a "Google hasn't verified this app" notice, which they continue past.
-- Google makes them approve again every 7 days.
-
-That is fine for trying it out. To remove the weekly approval, press **Publish app** on the Audience page. The app only asks for Google's narrowest Drive permission (files the app itself created), which Google classes as non-sensitive, so no review is needed to publish; Google's sign-in screen will not show the app's name until you also complete its optional brand verification.
-
-### How syncing behaves
-
-- The app creates a folder called **Life Diary** in the person's Drive, holding `life-diary.json` and one JPEG file per meal photo. It cannot see anything else in their Drive.
-- After each change, the app uploads the diary a few seconds later. Each photo is uploaded once, as its own file, so the diary file stays small.
-- When a meal or its photo is deleted, the photo's file is moved to Drive's bin, where Google keeps it for a while before removing it.
-- If a phone loses its stored data but is still linked, the next sync brings the diary and photos back from Drive.
-- A Google sign-in obtained this way lasts about an hour. With "Sign in when the app opens" on, the app renews it at start by passing through Google's page for a moment. If Google wants a tap, a banner appears: "Google Drive sync is paused. Tap to sign in and sync." Entries made meanwhile are kept and uploaded after signing in.
-- If two devices both changed the diary before syncing, a banner asks which version to keep. The replaced one can be brought back once with Trackers > **Undo last replace**.
+- **Where it is kept:** a Supabase project owned by whoever hosts the app. The table `diaries` holds one row per person, and the private bucket `photos` holds each person's photos in a folder named after their account. Database rules let each signed-in person read and write only their own row and folder.
+- **Who can see it:** each person only their own diary. The owner of the Supabase project can see everything in the Supabase dashboard.
+- **Settings:** `config.js` holds the project address and its public (publishable) key. Never put a secret or service-role key there.
+- **Sign-up:** no email is sent ("Confirm email" is switched off in Supabase), because Supabase's built-in email only reaches the project owner's team. A forgotten password is reset by the project owner in the Supabase dashboard (Authentication > Users).
+- **Signing out** removes the diary from that device; it stays in the account.
+- **Free plan:** Supabase pauses a free project after a week with no use. Nothing is lost; the owner switches it back on in the dashboard.
 
 ## 4. Summaries from Claude
 
