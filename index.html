@@ -68,7 +68,7 @@ button.card{display:block;width:100%;text-align:left}
 .seg:has(input:checked){border-color:var(--accent);background:var(--tint);color:var(--accent-dark);font-weight:600}
 .item:disabled .title{color:var(--muted)}
 .strong{font-weight:600}
-.md h3{font-size:15px;font-weight:600;margin:14px 0 4px}.md h3:first-child{margin-top:0}.md p{margin:6px 0}.md ul{margin:6px 0;padding-left:20px}.md li{margin:3px 0}.md-table{overflow-x:auto;margin:8px 0}.balance tr.avg td{font-weight:600;border-bottom:0}.balance-chart{display:flex;gap:3px;align-items:stretch}.bcol{flex:1;display:flex;flex-direction:column}.bup,.bdown{height:40px;display:flex}.bup{align-items:flex-end;border-bottom:1px solid var(--muted)}.bdown{align-items:flex-start}.bup span,.bdown span{width:100%;border-radius:2px}.bup span{background:var(--warn)}.bdown span{background:var(--accent)}.md table{border-collapse:collapse;width:100%;font-size:14px}.md th,.md td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line,rgba(127,127,127,.25))}.md th{font-weight:600}.md td:not(:first-child),.md th:not(:first-child){text-align:right;white-space:nowrap}
+.md h3{font-size:15px;font-weight:600;margin:14px 0 4px}.md h3:first-child{margin-top:0}.md p{margin:6px 0}.md ul{margin:6px 0;padding-left:20px}.md li{margin:3px 0}.md-table{overflow-x:auto;margin:8px 0}.balance{border-collapse:collapse;width:100%;font-size:14px}.balance th,.balance td{padding:6px 6px;border-bottom:1px solid var(--divider);text-align:right;white-space:nowrap}.balance th:first-child,.balance td:first-child{text-align:left;padding-left:0}.balance th{font-weight:600;color:var(--muted);font-size:13px}.balance tr.avg td{font-weight:600;border-bottom:0}.balance-chart{display:flex;align-items:stretch}.bcol{flex:1;display:flex;flex-direction:column;align-items:stretch}.bup,.bdown{height:40px;display:flex;justify-content:center}.bup{align-items:flex-end;border-bottom:1px solid var(--muted)}.bdown{align-items:flex-start}.bup span,.bdown span{width:60%;max-width:26px;border-radius:2px}.thin .bup span,.thin .bdown span{width:70%}.blab{font-size:12px;color:var(--muted);text-align:center;margin-top:4px}.bup span{background:var(--warn)}.bdown span{background:var(--accent)}.md table{border-collapse:collapse;width:100%;font-size:14px}.md th,.md td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line,rgba(127,127,127,.25))}.md th{font-weight:600}.md td:not(:first-child),.md th:not(:first-child){text-align:right;white-space:nowrap}
 .thumb{flex:none;width:56px;height:56px;border-radius:8px;object-fit:cover;background:var(--tint)}
 .photo-btn{display:block;width:100%;padding:0;border:0;background:none}
 .photo-preview{display:block;width:100%;max-height:260px;border-radius:10px;object-fit:cover;background:var(--tint)}
@@ -1029,28 +1029,32 @@ function balanceCard(period, start, end) {
   function signed(n) { return n == null ? '–' : (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(Math.round(n)).toLocaleString('en-US'); }
   function kcal(n) { return n == null ? '–' : Math.round(n).toLocaleString('en-US'); }
   var bal = days.map(function (d) { return d[1].out != null ? d[1].in - d[1].out : null; });
-  // Bars: one per day of the period, growing up for a surplus and down for a deficit.
-  if (period !== 'day' && bal.filter(function (b) { return b != null; }).length >= 2) {
-    var byDay = {}; days.forEach(function (d, i) { byDay[d[0]] = bal[i]; });
-    var max = Math.max.apply(null, bal.filter(function (b) { return b != null; }).map(Math.abs).concat([1]));
-    h += '<div class="balance-chart mt10" aria-hidden="true">';
+  var today = todayIso();
+  // Today is not over yet, so it stays out of the bars and the average.
+  var done = days.map(function (d, i) { return d[0] !== today ? i : -1; }).filter(function (i) { return i >= 0; });
+  if (period !== 'day' && done.filter(function (i) { return bal[i] != null; }).length >= 2) {
+    var byDay = {}; done.forEach(function (i) { byDay[days[i][0]] = bal[i]; });
+    var max = Math.max.apply(null, done.map(function (i) { return bal[i]; }).filter(function (b) { return b != null; }).map(Math.abs).concat([1]));
+    h += '<div class="balance-chart mt10' + (period === 'month' ? ' thin' : '') + '" aria-hidden="true">';
     for (var d2 = start; d2 <= end; d2 = addDays(d2, 1)) {
       var b = byDay[d2], ht = b == null ? 0 : Math.max(2, Math.round(Math.abs(b) / max * 40));
       h += '<span class="bcol"><span class="bup">' + (b > 0 ? '<span style="height:' + ht + 'px"></span>' : '') + '</span>' +
-        '<span class="bdown">' + (b < 0 ? '<span style="height:' + ht + 'px"></span>' : '') + '</span></span>';
+        '<span class="bdown">' + (b < 0 ? '<span style="height:' + ht + 'px"></span>' : '') + '</span>' +
+        (period === 'week' ? '<span class="blab">' + weekdayName(d2).slice(0, 3) + '</span>' : '') + '</span>';
     }
     h += '</div><p class="cap mt8">Bars above the line are a surplus, below it a deficit.</p>';
   }
   h += '<div class="md-table mt10"><table class="balance"><tr><th>Day</th><th>Eaten</th><th>Burned</th><th>Balance</th></tr>';
   days.forEach(function (d, i) {
-    h += '<tr><td>' + esc(weekdayName(d[0]).slice(0, 3) + ' ' + dayMonth(d[0])) + (d[0] === todayIso() ? ' (so far)' : '') + '</td><td>' + kcal(d[1].in) + '</td><td>' + kcal(d[1].out) + '</td><td>' + signed(bal[i]) + '</td></tr>';
+    h += '<tr><td>' + esc(weekdayName(d[0]).slice(0, 3) + ' ' + parseIso(d[0]).getDate() + ' ' + MONTHS[parseIso(d[0]).getMonth()].slice(0, 3)) + (d[0] === today ? ' (so far)' : '') + '</td><td>' + kcal(d[1].in) + '</td><td>' + kcal(d[1].out) + '</td><td>' + signed(bal[i]) + '</td></tr>';
   });
-  if (days.length > 1) {
+  if (done.length > 1) {
     var avg = function (xs) { xs = xs.filter(function (x) { return x != null; }); return xs.length ? average(xs) : null; };
-    h += '<tr class="avg"><td>Average</td><td>' + kcal(avg(days.map(function (d) { return d[1].in; }))) + '</td><td>' +
-      kcal(avg(days.map(function (d) { return d[1].out; }))) + '</td><td>' + signed(avg(bal)) + '</td></tr>';
+    h += '<tr class="avg"><td>Average</td><td>' + kcal(avg(done.map(function (i) { return days[i][1].in; }))) + '</td><td>' +
+      kcal(avg(done.map(function (i) { return days[i][1].out; }))) + '</td><td>' + signed(avg(done.map(function (i) { return bal[i]; }))) + '</td></tr>';
   }
-  h += '</table></div><p class="cap mt10">In kcal, for ' + plural(days.length, 'day', 'days') + ' with an estimate. ' + NUTRITION_NOTE + '</p>';
+  h += '</table></div><p class="cap mt10">In kcal, for ' + plural(days.length, 'day', 'days') + ' with an estimate' +
+    (done.length > 1 && done.length < days.length ? '; today is left out of the average until it is over' : '') + '. ' + NUTRITION_NOTE + '</p>';
   return h + '</section>';
 }
 var Estimates = (function () {
