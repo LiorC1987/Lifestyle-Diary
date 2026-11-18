@@ -1,6 +1,6 @@
 /* Keeps a copy of the app's own files so it opens without a connection.
    Diary data is never stored here. Raise the version to force a refresh. */
-var CACHE = 'life-diary-v6';
+var CACHE = 'life-diary-v7';
 var FILES = ['./', 'index.html', 'config.js', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', function (event) {
