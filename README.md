@@ -19,7 +19,7 @@ This repository is the whole app, published with GitHub Pages at:
 
 To switch Pages on (once): Settings > Pages > Build and deployment > Source: **Deploy from a branch**, branch **main**, folder **/ (root)**. To publish a new version, commit the changed files to `main`; the site updates within a minute or two. When `index.html` changes, also raise the number in `var CACHE = 'life-diary-v2'` in `sw.js`, so installed copies pick up the new version promptly.
 
-Keep the address the same once people use it. A phone stores the diary under that exact address, so a new address starts with an empty diary (a backup file or Google Drive carries it across).
+Keep the address the same once people use it. A phone stores the diary under that exact address, so a new address starts with an empty diary (signing in, or a backup file, carries it across).
 
 The repository is public, which GitHub requires for free Pages. It holds only the app's code: no diary data is ever stored here.
 
@@ -59,14 +59,14 @@ The file format is the same as the Android app's, so a diary can move between th
 
 ## What was tested, and what was not
 
-Tested here in desktop Chrome at phone size, 126 automated checks in total:
+Tested here in desktop Chrome at phone size, 170 automated checks in total:
 
 - Every screen: entering, editing and deleting entries, custom trackers, the calendar, charts, the weight trend, the report, backup and restore, the phone's Back button, and reopening with the host unreachable.
 - Meal photos: choosing, shrinking, showing, replacing and removing them, photo-only meals, backup and restore with photos, and what the report sends under four different kinds of share sheet.
-- Google Drive sync against a stand-in for Google's servers: first connection, automatic upload, a second device receiving the diary and its photos, a device that lost its data recovering from Drive, both-changed conflicts, expired and refused sign-ins, and uploads failing while offline.
+- Online accounts against a stand-in for Supabase: creating an account and signing in, mistakes, automatic saving, a second device receiving the diary and its photos, both-changed conflicts, expired and lost sign-ins, offline use, a second person seeing only their own diary, and signing out.
+- A newly published version being picked up and loaded by itself.
 
 Not tested:
 
 - **A real iPhone or Android phone**, including its camera and its real share sheet.
-- **Real Google sign-in and the real Drive service.** The requests follow Google's documentation, but the first real connection is the true test.
-- The weakest point is the Google sign-in step when the app runs from an iPhone home-screen icon. If it fails to return to the app, switch off "Sign in when the app opens" and use the banner, or use backup files, and tell me what happened.
+- **The real Supabase service.** The requests follow Supabase's documented interfaces, but the first real sign-in is the true test.
