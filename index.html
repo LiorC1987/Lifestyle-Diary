@@ -68,7 +68,7 @@ button.card{display:block;width:100%;text-align:left}
 .seg:has(input:checked){border-color:var(--accent);background:var(--tint);color:var(--accent-dark);font-weight:600}
 .item:disabled .title{color:var(--muted)}
 .strong{font-weight:600}
-.md h3{font-size:15px;font-weight:600;margin:14px 0 4px}.md h3:first-child{margin-top:0}.md p{margin:6px 0}.md ul{margin:6px 0;padding-left:20px}.md li{margin:3px 0}
+.md h3{font-size:15px;font-weight:600;margin:14px 0 4px}.md h3:first-child{margin-top:0}.md p{margin:6px 0}.md ul{margin:6px 0;padding-left:20px}.md li{margin:3px 0}.md-table{overflow-x:auto;margin:8px 0}.md table{border-collapse:collapse;width:100%;font-size:14px}.md th,.md td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line,rgba(127,127,127,.25))}.md th{font-weight:600}.md td:not(:first-child),.md th:not(:first-child){text-align:right;white-space:nowrap}
 .thumb{flex:none;width:56px;height:56px;border-radius:8px;object-fit:cover;background:var(--tint)}
 .photo-btn{display:block;width:100%;padding:0;border:0;background:none}
 .photo-preview{display:block;width:100%;max-height:260px;border-radius:10px;object-fit:cover;background:var(--tint)}
@@ -921,7 +921,11 @@ function claudeCard(period, start, end) {
   if (!Cloud.signedIn()) return h + '<p class="cap mt8">Sign in under Trackers → Online account, then switch on Claude summaries to get them written right here.</p></section>';
   if (!isOn(KEYS.AI)) return h + '<p class="cap mt8">Claude can write this summary for you right here. Switch on Claude summaries under Trackers to try it.</p></section>';
   var s = Claude.get(period, start), asking = Claude.asking(period, start), err = Claude.error(period, start);
-  if (s && s.text) h += '<div class="md mt8">' + markdown(s.text) + '</div><p class="cap mt10">Written by Claude ' + esc(agoLabel(Date.parse(s.at))) + '.</p>';
+  if (s && s.text) {
+    h += '<div class="md mt8">' + markdown(s.text) + '</div>';
+    if (/nutrition/i.test(s.text) && !/rough estimate/i.test(s.text)) h += '<p class="cap mt10">' + NUTRITION_NOTE + '</p>';
+    h += '<p class="cap mt10">Written by Claude ' + esc(agoLabel(Date.parse(s.at))) + '.</p>';
+  }
   else if (!asking) h += '<p class="mt8">Ask Claude to read this ' + period + '\'s entries' + (periodPhotoNames(start, end).length ? ' and meal photos' : '') + ' and write what stood out and what is worth trying.</p>';
   if (asking) h += '<p class="mt10 cap">Claude is writing… this takes about half a minute.</p>';
   if (err) h += '<p class="cap mt10" style="color:var(--warn)">' + esc(err) + '</p>';
@@ -929,20 +933,35 @@ function claudeCard(period, start, end) {
     (asking ? 'Writing…' : s && s.text ? 'Ask again with the latest entries' : 'Ask Claude') + '</button>';
   return h + '</section>';
 }
-/* A small Markdown reader for Claude's answers: headings, bullet points, bold and paragraphs. */
+/* A small Markdown reader for Claude's answers: headings, bullet points, simple tables, bold and paragraphs. */
 function markdown(text) {
-  var out = [], list = false, para = [];
+  var out = [], list = false, para = [], table = null;
   function inline(t) { return esc(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\s][^*]*?)\*(?!\*)/g, '$1<em>$2</em>'); }
   function flush() { if (para.length) { out.push('<p>' + inline(para.join(' ')) + '</p>'); para = []; } }
   function endList() { if (list) { out.push('</ul>'); list = false; } }
+  function endTable() {
+    if (!table) return;
+    out.push('<div class="md-table"><table>' + table.map(function (cells, i) {
+      var tag = i === 0 ? 'th' : 'td';
+      return '<tr>' + cells.map(function (c) { return '<' + tag + '>' + inline(c) + '</' + tag + '>'; }).join('') + '</tr>';
+    }).join('') + '</table></div>');
+    table = null;
+  }
   String(text).split(/\r?\n/).forEach(function (line) {
     var t = line.trim(), m;
+    if (/^\|.*\|$/.test(t)) {
+      flush(); endList();
+      var cells = t.slice(1, -1).split('|').map(function (c) { return c.trim(); });
+      if (cells.every(function (c) { return /^:?-{2,}:?$/.test(c); })) return;   // the line under the header
+      (table = table || []).push(cells); return;
+    }
+    endTable();
     if (!t) { flush(); endList(); return; }
     if ((m = t.match(/^#{1,6}\s+(.*)$/))) { flush(); endList(); out.push('<h3>' + inline(m[1].replace(/\*\*/g, '')) + '</h3>'); return; }
     if ((m = t.match(/^(?:[-*•]|\d+[.)])\s+(.*)$/))) { flush(); if (!list) { out.push('<ul>'); list = true; } out.push('<li>' + inline(m[1]) + '</li>'); return; }
     endList(); para.push(t);
   });
-  flush(); endList();
+  flush(); endList(); endTable();
   return out.join('');
 }
 
@@ -1002,6 +1021,7 @@ var Claude = (function () {
 function dayPhotoNames(iso) {
   return isOn(KEYS.FOOD) ? state.meals.filter(function (m) { return m.localDate === iso && photoOf(m); }).map(photoOf) : [];
 }
+var NUTRITION_NOTE = 'This is a rough estimate based on the information available, and should be used as a guideline rather than an exact count.';
 /* attached: names of the photo files being sent together with the report, if any. */
 function buildReport(attached) {
   attached = attached || [];
@@ -1022,7 +1042,14 @@ function buildReport(attached) {
     L.push('- I want to know whether sweets affect my mood. Spot sweets in the meals (desserts, chocolate, cake, ice cream, candy, sweet drinks and similar), from the text' +
       (attached.length ? ' and the photos' : '') + '. Then compare my mood on days with and without sweets, and on the day after a day with sweets. Name the sweets you counted, so I can correct you. With fewer than about two weeks of meals and mood, say it is too early to tell rather than guessing.');
   }
-  L.push('- Keep the whole summary under about 200 words. I may ask follow-up questions afterwards.', '');
+  if (isOn(KEYS.FOOD)) {
+    L.push('- Then a section called "Nutrition estimate". Estimate the calories and nutrients of the meals from their descriptions' + (attached.length ? ' and photos' : '') +
+      (ui.period === 'day' ? ', as totals for the day.'
+        : ', in two columns: the total for the whole ' + ui.period + ', and the average per day with meals logged. Say how many days had meals logged, and mention days that look clearly higher or lower than the rest.') +
+      ' Give round numbers or ranges, as a short list (for a day) or a small table (for a week or month): calories (kcal); protein (g); carbohydrates (g), split into sugars (sweets and added sugar, and natural sugar such as fruit), starchy and complex carbohydrates, and fibre; fat (g), split into saturated, monounsaturated and polyunsaturated, and trans fat if any is likely; then other notable nutrients, such as salt (sodium) and any vitamins or minerals that look clearly high or low.' +
+      ' Name meals you could not judge, for example where the portion size is missing. End the section with this sentence: "' + NUTRITION_NOTE + '" If no meals are logged, leave the section out.');
+  }
+  L.push('- Keep "What stood out" and "Worth trying" under about 200 words together' + (isOn(KEYS.FOOD) ? '; the nutrition estimate is a short list on top of that' : '') + '. I may ask follow-up questions afterwards.', '');
   L.push('Mood is recorded on a scale from 1 (low) to 5 (great). Sleep is the time slept the night before each date. Weeks run Sunday to Saturday.', '');
 
   L.push('## Figures calculated by the app', '');
@@ -1111,7 +1138,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.4.</p>';
+    '. Version 0.4.1.</p>';
   return html + '</main>';
 }
 function accountCard() {

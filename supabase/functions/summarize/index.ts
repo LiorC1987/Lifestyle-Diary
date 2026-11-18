@@ -37,7 +37,7 @@ const SYSTEM = [
   "Follow the instructions at the top of the report.",
   "The reader cannot reply to you here, so do not ask questions or offer to do more.",
   "Write in the language most of the diary entries are written in; if that is unclear, write in English.",
-  "Format: Markdown with '## ' section headings, short paragraphs and '- ' bullet points only. No tables, no other headings.",
+  "Format: Markdown with '## ' section headings, short paragraphs and '- ' bullet points. A simple Markdown table is allowed only in the nutrition estimate. No other headings.",
 ].join("\n");
 
 function toBase64(bytes: Uint8Array): string {
