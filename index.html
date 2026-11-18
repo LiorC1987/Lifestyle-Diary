@@ -662,6 +662,14 @@ function banners() {
     out += '<button class="banner" data-act="openAccount">You were signed out, so new entries are only on this device. Tap to sign in again.</button>';
   } else if (Cloud.hasConflict()) {
     out += '<button class="banner" data-act="cloudSync">Your account has a different version of your diary. Tap to choose which one to keep.</button>';
+  } else if (Cloud.access() === 'pending') {
+    out += '<button class="banner" data-act="openAccount">Your account is waiting for approval. Until then your entries are kept on this device only.</button>';
+  } else if (Cloud.access() === 'rejected') {
+    out += '<button class="banner" data-act="openAccount">Your account was not approved, so your entries are kept on this device only.</button>';
+  }
+  if (Cloud.waiting() > 0) {
+    out += '<button class="banner" data-act="adminAccounts">' + (Cloud.waiting() === 1 ? '1 new account is' : Cloud.waiting() + ' new accounts are') +
+      ' waiting for your approval. Tap to review.</button>';
   }
   return out;
 }
@@ -1002,6 +1010,7 @@ function claudeCard(period, start, end) {
   if (PREVIEW || !Cloud.configured()) return '';
   var h = '<section class="card" id="claude"><h2 class="label">Summary from Claude</h2>';
   if (!Cloud.signedIn()) return h + '<p class="cap mt8">Sign in under Trackers → Online account, then switch on Claude summaries to get them written right here.</p></section>';
+  if (!Cloud.approved()) return h + '<p class="cap mt8">Claude summaries start once your account is approved.</p></section>';
   if (!isOn(KEYS.AI)) return h + '<p class="cap mt8">Claude can write this summary for you right here. Switch on Claude summaries under Trackers to try it.</p></section>';
   var s = Claude.get(period, start), asking = Claude.asking(period, start), err = Claude.error(period, start);
   if (s && s.text) {
@@ -1161,7 +1170,7 @@ var Claude = (function () {
     }).then(function () { asking[k] = false; render(); });
   }
   return {
-    available: function () { return !PREVIEW && Cloud.signedIn() && isOn(KEYS.AI); },
+    available: function () { return !PREVIEW && Cloud.approved() && isOn(KEYS.AI); },
     get: function (period, start) { if (isOn(KEYS.AI)) load(period, start); return cache[key(period, start)]; },
     asking: function (period, start) { return !!asking[key(period, start)]; },
     error: function (period, start) { return errors[key(period, start)] || ''; },
@@ -1298,9 +1307,10 @@ function viewTrackers() {
 
   if (Cloud.configured() && !PREVIEW) {
     html += '<section class="card flush" aria-label="Claude summaries"><div class="item"><span class="grow"><span class="title">Claude summaries</span><br><span class="sub">' +
-      (Cloud.signedIn() ? 'Get a summary written right on the Summary page. When you tap Ask Claude, that period\'s entries and meal photos are sent to Claude.'
-        : 'Needs the online account below.') + '</span></span>' +
-      (Cloud.signedIn() ? switchBtn('toggle', KEYS.AI, 'Claude summaries', isOn(KEYS.AI)) : '') + '</div></section>';
+      (!Cloud.signedIn() ? 'Needs the online account below.'
+        : !Cloud.approved() ? 'Available once your account is approved.'
+        : 'Get a summary written right on the Summary page. When you tap Ask Claude, that period\'s entries and meal photos are sent to Claude.') + '</span></span>' +
+      (Cloud.approved() ? switchBtn('toggle', KEYS.AI, 'Claude summaries', isOn(KEYS.AI)) : '') + '</div></section>';
   }
   html += '<section class="card flush" id="account" aria-label="Account"><h2 class="label pad">Online account</h2>' + accountCard() + '</section>';
 
@@ -1312,7 +1322,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.6.</p>';
+    '. Version 0.7.</p>';
   return html + '</main>';
 }
 function accountCard() {
@@ -1332,6 +1342,15 @@ function accountCard() {
       '<button type="button" class="btn" data-act="cloudSignUp"' + (Cloud.busy() ? ' disabled' : '') + '>Create account</button></div>' +
       '<p class="cap">New here? Type an email and a password of at least 6 characters and tap Create account. No email is sent.</p></div></form>';
   }
+  var access = Cloud.access();
+  if (access === 'pending' || access === 'rejected') {
+    return '<div style="' + pad14 + '"><p><span class="strong">Signed in as ' + esc(m.email) + '</span><br><span class="cap">' +
+      (access === 'pending' ? 'Waiting for approval. Your entries are kept on this device and are saved online by themselves once the account is approved.'
+        : 'This account was not approved, so nothing is saved online. Your entries are kept on this device.') + '</span></p>' +
+      (Cloud.error() ? '<p class="cap" style="color:var(--warn)">Could not check: ' + esc(Cloud.error()) + '</p>' : '') +
+      '<div class="row mt12"><button class="btn primary" data-act="cloudSync"' + (Cloud.busy() ? ' disabled' : '') + '>' + (Cloud.busy() ? 'Checking…' : 'Check again') + '</button>' +
+      '<button class="btn" data-act="cloudSignOut">Sign out</button></div></div>';
+  }
   var status = Cloud.busy() ? 'Saving…'
     : Cloud.hasConflict() ? 'Two versions: tap Sync now to choose one'
     : Cloud.error() ? 'Last sync failed: ' + Cloud.error()
@@ -1339,8 +1358,65 @@ function accountCard() {
     : 'Not saved online yet';
   return '<div style="' + pad14 + '"><p><span class="strong">Signed in as ' + esc(m.email) + '</span><br><span class="cap">' + esc(status) + '</span></p>' +
     '<div class="row mt12"><button class="btn primary" data-act="cloudSync"' + (Cloud.busy() ? ' disabled' : '') + '>Sync now</button>' +
-    '<button class="btn" data-act="cloudSignOut">Sign out</button></div></div>';
+    '<button class="btn" data-act="cloudSignOut">Sign out</button></div></div>' +
+    (Cloud.isAdmin() ? '<button class="item" data-act="adminAccounts"><span class="grow"><span class="title">Manage accounts</span><br><span class="sub">' +
+      (Cloud.waiting() ? plural(Cloud.waiting(), 'account', 'accounts') + ' waiting for approval' : 'Approve or turn down new accounts') +
+      '</span></span>' + ICON.chev + '</button>' : '');
 }
+
+/* The admin's list of accounts (only the admin account can load it; the database checks). */
+var Admin = (function () {
+  var rows = null, error = '', busyId = '';
+  var LABEL = { pending: 'Waiting for approval', approved: 'Approved', rejected: 'Not approved' };
+  function rpc(name, args) {
+    return Cloud.call('/rest/v1/rpc/' + name, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args || {}) })
+      .then(function (r) { return r.text(); }).then(function (t) { return t ? JSON.parse(t) : null; });
+  }
+  function why(e) {
+    return e && (e.message === 'Failed to fetch' || e.name === 'TypeError') ? 'No connection. Try again when you are online.' : (e && e.message) || 'Something went wrong.';
+  }
+  function draw() {
+    var box = document.getElementById('admin-list');
+    if (!box) return;
+    if (error) { box.innerHTML = '<p class="cap" style="color:var(--warn)">' + esc(error) + '</p>'; return; }
+    if (!rows) { box.innerHTML = '<p class="cap">Loading…</p>'; return; }
+    box.innerHTML = rows.map(function (a) {
+      var buttons = a.is_admin ? '' : [
+        a.status !== 'approved' ? '<button type="button" class="btn primary" data-act="adminSet" data-id="' + esc(a.user_id) + '" data-val="approved">Approve</button>' : '',
+        a.status === 'pending' ? '<button type="button" class="btn" data-act="adminSet" data-id="' + esc(a.user_id) + '" data-val="rejected">Turn down</button>' : '',
+        a.status === 'approved' ? '<button type="button" class="btn" data-act="adminSet" data-id="' + esc(a.user_id) + '" data-val="rejected">Take back approval</button>' : ''
+      ].join('');
+      if (busyId === a.user_id) buttons = '<span class="cap">Saving…</span>';
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--divider)"><p><span class="strong">' + esc(a.email || '(no email)') + '</span>' +
+        (a.is_admin ? ' <span class="cap">(you, admin)</span>' : '') + '<br><span class="cap">' + esc(LABEL[a.status] || a.status) +
+        ' · signed up ' + esc(agoLabel(Date.parse(a.requested_at))) + ' · last sign-in ' + esc(agoLabel(Date.parse(a.last_sign_in_at || '') || 0)) + '</span></p>' +
+        (buttons ? '<div class="row mt8">' + buttons + '</div>' : '') + '</div>';
+    }).join('') || '<p class="cap">No accounts yet.</p>';
+  }
+  function load() {
+    error = '';
+    return rpc('admin_list_accounts').then(function (list) { rows = Array.isArray(list) ? list : []; }, function (e) { error = why(e); })
+      .then(function () { draw(); return Cloud.refreshAccess(); });
+  }
+  return {
+    open: function () {
+      rows = null; error = ''; busyId = '';
+      openSheet({
+        title: 'Manage accounts', autofocus: false,
+        body: '<p class="cap">New accounts can sign in, but nothing is saved online and Claude summaries stay off until you approve them. ' +
+          'Entries they make in the meantime are kept on their phone and saved online once approved.</p><div id="admin-list" class="mt8"></div>'
+      });
+      draw(); load();
+    },
+    set: function (id, status) {
+      if (busyId) return;
+      busyId = id; draw();
+      rpc('admin_set_status', { target: id, new_status: status }).then(function () {
+        toast(status === 'approved' ? 'Account approved' : 'Account not approved');
+      }, function (e) { toast(why(e)); }).then(function () { busyId = ''; return load(); });
+    }
+  };
+})();
 
 /* ------------------------------------------------------------------ weight */
 
@@ -1920,7 +1996,8 @@ document.getElementById('restore-file').addEventListener('change', function (e) 
 var Cloud = (function () {
   var BASE = String(CFG.supabaseUrl || '').trim().replace(/\/+$/, '');
   var KEY = String(CFG.supabaseKey || '').trim();
-  var blank = { userId: '', email: '', remoteModifiedAt: 0, dirty: false, conflict: false, lastSyncAt: 0 };
+  // access: '' until the first check, then 'approved', 'pending' or 'rejected' (set by the admin).
+  var blank = { userId: '', email: '', remoteModifiedAt: 0, dirty: false, conflict: false, lastSyncAt: 0, access: '', admin: false, waiting: 0 };
   var meta = Object.assign({}, blank, lsGet('ld.cloud', {}));
   var session = lsGet('ld.session', null);   // { access, refresh, expiresAt, userId, email }
   var busy = false, again = false, lastError = '', authErr = '', timer = null, manual = false, deferred = false, refreshing = null;
@@ -2059,8 +2136,22 @@ var Cloud = (function () {
     });
   }
 
+  /* Asks the account's approval status. New accounts wait until the admin approves
+     them; until then nothing is saved online and the entries stay on this device. */
+  function checkAccess() {
+    return api('/rest/v1/rpc/my_access', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .then(readJson).then(function (j) {
+        meta.access = j && j.status || 'pending';
+        meta.admin = !!(j && j.admin);
+        meta.waiting = Number(j && j.waiting) || 0;
+        saveMeta();
+      });
+  }
   /* One sync pass: compare this device with the account and move the newer diary across. */
   function run() {
+    return checkAccess().then(function () { return meta.access === 'approved' ? runSync() : null; });
+  }
+  function runSync() {
     return fetchRemote().then(function (remote) {
       deferred = false;
       if (!remote) return pushLocal();
@@ -2111,11 +2202,12 @@ var Cloud = (function () {
     if (busy) { again = true; return Promise.resolve(); }
     if (meta.conflict && !byUser) return Promise.resolve();
     busy = true; manual = !!byUser; lastError = ''; render();
-    return run().then(function () { meta.lastSyncAt = Date.now(); }, function (e) {
+    return run().then(function () { if (meta.access === 'approved') meta.lastSyncAt = Date.now(); }, function (e) {
       lastError = e.auth ? '' : (e.message === 'Failed to fetch' || e.name === 'TypeError' ? 'no connection' : e.message || 'no connection');
     }).then(function () {
       busy = false; manual = false; saveMeta(); render();
-      if (again || (meta.dirty && !meta.conflict && signedIn() && !lastError)) { again = false; schedule(1500); }
+      var waiting = meta.access === 'pending' || meta.access === 'rejected';   // checked again on Sync now or when the app is reopened
+      if (!waiting && (again || (meta.dirty && !meta.conflict && signedIn() && !lastError))) { again = false; schedule(1500); }
       else if (lastError && meta.dirty) schedule(60000);   // keep trying while offline
     });
   }
@@ -2138,7 +2230,7 @@ var Cloud = (function () {
       keepSession(j);
       saveMeta();
       busy = false;
-      toast(create ? 'Account created. Your diary is being saved online.' : 'Signed in');
+      toast(create ? 'Account created. It is saved online once it is approved.' : 'Signed in');
       return sync(true);
     }, function (e) {
       busy = false;
@@ -2170,6 +2262,12 @@ var Cloud = (function () {
     configured: configured,
     signedIn: signedIn,
     needsSignIn: function () { return configured() && !!meta.userId && !signedIn(); },
+    /* Not yet known counts as approved; the server checks again on every request. */
+    approved: function () { return signedIn() && meta.access !== 'pending' && meta.access !== 'rejected'; },
+    access: function () { return signedIn() ? meta.access : ''; },
+    isAdmin: function () { return signedIn() && meta.admin; },
+    waiting: function () { return signedIn() && meta.admin ? meta.waiting : 0; },
+    refreshAccess: function () { return signedIn() ? checkAccess().then(render, function () {}) : Promise.resolve(); },
     hasConflict: function () { return signedIn() && meta.conflict; },
     busy: function () { return busy; },
     error: function () { return lastError; },
@@ -2331,6 +2429,8 @@ var actions = {
   cloudSignIn: function () { accountSubmit(false); },
   cloudSignUp: function () { accountSubmit(true); },
   cloudSync: function () { Cloud.syncNow(); },
+  adminAccounts: function () { if (Cloud.isAdmin()) Admin.open(); },
+  adminSet: function (d) { Admin.set(d.id, d.val); },
   cloudSignOut: function () {
     var dirty = Cloud.meta().dirty;
     confirmSheet('Sign out?', dirty

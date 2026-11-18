@@ -90,6 +90,16 @@ Deno.serve(async (req) => {
   const user = await who.json();
   const uid: string = user.id;
 
+  // Only accounts the admin has approved may use the Claude credit (see approvals.sql).
+  const access = await fetch(URL_BASE + "/rest/v1/rpc/my_access", {
+    method: "POST", headers: { ...asUser, "Content-Type": "application/json" }, body: "{}",
+  });
+  const status = access.ok ? String((await access.json())?.status || "") : "";
+  if (status !== "approved") {
+    return fail(403, status === "rejected" ? "This account was not approved, so Claude summaries are not available."
+      : "Your account is waiting for approval. Claude summaries start once it is approved.");
+  }
+
   let body: { period?: string; start?: string; end?: string; report?: string; photos?: string[] };
   try { body = await req.json(); } catch (_) { return fail(400, "The request was not readable."); }
   const period = body.period, start = body.start, end = body.end, report = body.report;
