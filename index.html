@@ -1322,7 +1322,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.7.</p>';
+    '. Version 0.7.1.</p>';
   return html + '</main>';
 }
 function accountCard() {
@@ -1606,7 +1606,7 @@ document.addEventListener('change', function (e) {
     if (sheet && document.getElementById('meal-photo')) { sheet.photoNew = url; paintMealPhoto(); }
   }, function () { toast('That file could not be read as a picture'); });
 });
-var ACTIVITY_TYPES = ['Walk', 'Run', 'Cycling', 'Swimming', 'Gym', 'Yoga', 'Stretching', 'Hiking', 'Dancing', 'Sports', 'Housework', 'Gardening'];
+var ACTIVITY_TYPES = ['Walk', 'Run', 'Cycling', 'Swimming', 'Gym', 'Ab work', 'Leg work', 'Yoga', 'Pilates', 'Stretching', 'Hiking', 'Dancing', 'Trampoline', 'Sports', 'Housework', 'Gardening'];
 var DURATIONS = [[15, '15 min'], [30, '30 min'], [60, '1 h'], [90, '1 h 30 min'], [120, '2 h']];
 var OTHER = '__other';
 
