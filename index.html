@@ -1183,7 +1183,7 @@ var Claude = (function () {
 function dayPhotoNames(iso) {
   return isOn(KEYS.FOOD) ? state.meals.filter(function (m) { return m.localDate === iso && photoOf(m); }).map(photoOf) : [];
 }
-var NUTRITION_NOTE = 'This is a rough estimate based on the information available, and should be used as a guideline rather than an exact count.';
+var NUTRITION_NOTE = 'This is a rough estimate based on the information available, and should be read as an indication of direction rather than an exact count.';
 /* attached: names of the photo files being sent together with the report, if any. */
 function buildReport(attached) {
   attached = attached || [];
@@ -1322,7 +1322,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.7.1.</p>';
+    '. Version 0.7.2.</p>';
   return html + '</main>';
 }
 function accountCard() {
