@@ -1217,6 +1217,114 @@ function garminSheet() {
   });
 }
 
+/* Phone notifications. Each phone signs up on its own; its choices are kept by the "push" server function. */
+var Push = (function () {
+  var info = lsGet('ld.push', null), busy = false, note = '';
+  function supported() { return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+  function iosNeedsIcon() { return /iPhone|iPad|iPod/.test(navigator.userAgent) && !(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches)); }
+  function zone() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) { return 'UTC'; } }
+  function keep() { lsSet('ld.push', info); }
+  function call(body) {
+    return Cloud.call('/functions/v1/push', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) { return r.json(); });
+  }
+  function reg() {
+    return Promise.race([navigator.serviceWorker.ready, new Promise(function (_, no) { setTimeout(function () { no(new Error('The app is still installing. Try again in a moment.')); }, 10000); })]);
+  }
+  function key(b64) {
+    var s = (b64 + '='.repeat((4 - b64.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/'), bin = atob(s), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function failed(e) {
+    note = e.auth ? 'You are signed out. Sign in again.' : e.message === 'Failed to fetch' || e.name === 'TypeError' ? 'No connection. Try again when you are online.' : e.message || 'Something went wrong.';
+    toast(note);
+  }
+  function save(change) {
+    var next = Object.assign({}, info, change, { zone: zone() });
+    busy = true; render();
+    return call({ action: 'update', endpoint: info.endpoint, timeZone: next.zone, dailyTime: next.dailyTime, weekly: next.weekly })
+      .then(function () { info = next; keep(); note = ''; }, function (e) { if (/not signed up/.test(e.message || '')) { info = null; keep(); } failed(e); })
+      .then(function () { busy = false; render(); });
+  }
+  return {
+    supported: supported, iosNeedsIcon: iosNeedsIcon,
+    on: function () { return !!info; }, busy: function () { return busy; }, info: function () { return info || {}; }, note: function () { return note; },
+    turnOn: function () {
+      if (busy) return;
+      // Asked right away, while the tap still counts as the person's own action (needed on iPhone).
+      var asked = Notification.requestPermission();
+      busy = true; note = ''; render();
+      Promise.resolve(asked).then(function (p) {
+        if (p !== 'granted') throw new Error(p === 'denied' ? 'Notifications are blocked for the diary. Allow them in the phone\'s settings, then try again.' : 'Notifications were not allowed.');
+        return Promise.all([reg(), call({ action: 'publicKey' })]);
+      }).then(function (both) {
+        var r = both[0], pub = both[1].publicKey;
+        return r.pushManager.getSubscription().then(function (old) {
+          return old || r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key(pub) });
+        });
+      }).then(function (sub) {
+        var json = sub.toJSON ? sub.toJSON() : sub, choice = { endpoint: json.endpoint, dailyTime: '21:00', weekly: true, zone: zone() };
+        return call({ action: 'subscribe', subscription: json, timeZone: choice.zone, dailyTime: choice.dailyTime, weekly: true }).then(function () {
+          info = choice; keep(); toast('Notifications on');
+        });
+      }).catch(failed).then(function () { busy = false; render(); });
+    },
+    turnOff: function () {
+      var was = info; info = null; keep(); render();
+      if (!was) return Promise.resolve();
+      var drop = supported() ? reg().then(function (r) { return r.pushManager.getSubscription(); }).then(function (s) { return s && s.unsubscribe(); }).catch(function () {}) : Promise.resolve();
+      return drop.then(function () { return call({ action: 'unsubscribe', endpoint: was.endpoint }).catch(function () {}); });
+    },
+    setDaily: function (t) { if (info) save({ dailyTime: t || null }); },
+    setWeekly: function (on) { if (info) save({ weekly: on }); },
+    test: function () {
+      if (!info || busy) return;
+      busy = true; render();
+      call({ action: 'test', endpoint: info.endpoint }).then(function () { toast('Sent. It should arrive in a few seconds.'); }, function (e) {
+        if (/not signed up|no longer accepts/.test(e.message || '')) { info = null; keep(); }
+        failed(e);
+      }).then(function () { busy = false; render(); });
+    },
+    /* After travelling, the reminders follow the phone's time zone. */
+    checkZone: function () { if (info && Cloud.approved() && info.zone !== zone() && !busy) save({}); }
+  };
+})();
+var NOTIFY_TIMES = ['19:00', '20:00', '21:00', '22:00', '23:00'];
+function notifyCard() {
+  var h = '<section class="card flush" aria-label="Notifications"><div class="item"><span class="grow"><span class="title">Notifications</span><br><span class="sub">';
+  var can = Cloud.approved() && Push.supported() && !Push.iosNeedsIcon();
+  h += !Cloud.signedIn() ? 'Needs the online account below.'
+    : !Cloud.approved() ? 'Available once your account is approved.'
+    : Push.iosNeedsIcon() || (!Push.supported() && /iPhone|iPad|iPod/.test(navigator.userAgent)) ? 'On iPhone, open the diary from its home-screen icon to turn these on.'
+    : !Push.supported() ? 'This browser cannot show notifications.'
+    : Push.on() ? 'On for this phone. ' + (Push.note() ? esc(Push.note()) : '')
+    : 'A reminder in the evening, and a note on Sunday when last week is over. Set on each phone separately.';
+  h += '</span></span>' + (can ? '<button class="switch" role="switch" aria-checked="' + Push.on() + '" aria-label="Notifications" data-act="notifySwitch"' + (Push.busy() ? ' disabled' : '') + '><span></span></button>' : '') + '</div>';
+  if (can && Push.on()) {
+    var i = Push.info();
+    h += '<div class="item"><span class="grow"><span class="title">Daily reminder</span><br><span class="sub">Skipped on days you have already tapped your mood.</span></span>' +
+      '<select id="notify-daily" aria-label="Daily reminder time" style="width:auto">' + ['<option value=""' + (i.dailyTime ? '' : ' selected') + '>Off</option>']
+        .concat(NOTIFY_TIMES.map(function (t) { return '<option value="' + t + '"' + (i.dailyTime === t ? ' selected' : '') + '>' + t + '</option>'; })).join('') + '</select></div>' +
+      '<div class="item"><span class="grow"><span class="title">Sunday: last week is over</span><br><span class="sub">At 9:00 on Sunday morning.</span></span>' +
+      '<button class="switch" role="switch" aria-checked="' + (i.weekly !== false) + '" aria-label="Sunday note" data-act="notifyWeekly"><span></span></button></div>' +
+      '<div class="item"><button class="btn tint block" data-act="notifyTest"' + (Push.busy() ? ' disabled' : '') + '>Send a test notification</button></div>';
+  }
+  return h + '</section>';
+}
+document.addEventListener('change', function (e) { if (e.target.id === 'notify-daily') Push.setDaily(e.target.value); });
+
+/* Opening the app from a notification. */
+function openFrom(what) {
+  if (what === 'weekly') {
+    var start = lsGet('ld.weeklyNew', '') || Weekly.lastWeekStart(); lsSet('ld.weeklyNew', '');
+    ui.tab = 'summary'; ui.period = 'week'; ui.anchor = start;
+  } else if (what === 'today') { ui.tab = 'today'; ui.date = todayIso(); ui.anchor = todayIso(); }
+  else return;
+  if (typeof closeSheet === 'function') closeSheet();
+  render();
+}
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', function (e) { if (e.data && e.data.open) openFrom(e.data.open); });
+
 /* Last week's summary, written by itself once the week is over (from 3:00 the next morning). */
 var Weekly = (function () {
   var running = false;
@@ -1232,6 +1340,7 @@ var Weekly = (function () {
     });
   }
   return {
+    lastWeekStart: function () { return lastWeek()[0]; },
     check: function () {
       if (running || !Claude.available() || !isOn(KEYS.WEEKLY)) return;
       var w = lastWeek(), start = w[0], end = w[1];
@@ -1483,6 +1592,7 @@ function viewTrackers() {
       (Cloud.approved() ? switchBtn('garminSwitch', KEYS.GARMIN, 'Garmin sync', isOn(KEYS.GARMIN)) : '') + '</div>' +
       (Cloud.approved() && isOn(KEYS.GARMIN) ? '<div class="item"><button class="btn tint block" data-act="garminSyncNow"' + (Garmin.busy() ? ' disabled' : '') + '>' +
         (Garmin.busy() ? 'Syncing…' : 'Sync now') + '</button></div>' : '') + '</section>';
+    html += notifyCard();
   }
   html += '<section class="card flush" id="account" aria-label="Account"><h2 class="label pad">Online account</h2>' + accountCard() + '</section>';
 
@@ -1494,7 +1604,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.9.</p>';
+    '. Version 0.10.</p>';
   return html + '</main>';
 }
 function accountCard() {
@@ -2522,7 +2632,7 @@ var Cloud = (function () {
     state = emptyState(); previousState = null;
     Store.save('diary', state); Store.save('previous', null);
     cleanupPhotos();
-    Claude.forget(); Estimates.forget();
+    Claude.forget(); Estimates.forget(); Push.turnOff();
     render();
   }
 
@@ -2590,6 +2700,9 @@ var actions = {
     } else garminSheet();
   },
   garminSyncNow: function () { Garmin.syncNow(); },
+  notifySwitch: function () { if (Push.on()) Push.turnOff(); else Push.turnOn(); },
+  notifyWeekly: function () { Push.setWeekly(!(Push.info().weekly !== false)); },
+  notifyTest: function () { Push.test(); },
   openWeekly: function () {
     var start = lsGet('ld.weeklyNew', ''); lsSet('ld.weeklyNew', '');
     if (start) { ui.tab = 'summary'; ui.period = 'week'; ui.anchor = start; }
@@ -2756,7 +2869,9 @@ Store.init().then(function () {
   cleanupPhotos();
   render();
   Cloud.start();
-  setTimeout(function () { Garmin.maybe(); Weekly.check(); }, 2500);
+  setTimeout(function () { Garmin.maybe(); Weekly.check(); Push.checkZone(); }, 2500);
+  var opened = new URLSearchParams(location.search).get('open');
+  if (opened) { history.replaceState(history.state, '', location.pathname); openFrom(opened); }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
 });
 
@@ -2766,7 +2881,7 @@ document.addEventListener('visibilitychange', function () {
   if (ui.tab === 'today' && !sheet && lsGet('ld.lastSeenDay', '') !== todayIso()) { ui.date = todayIso(); ui.anchor = todayIso(); render(); }
   lsSet('ld.lastSeenDay', todayIso());
   Cloud.resumed();
-  setTimeout(function () { Garmin.maybe(); Weekly.check(); }, 2500);
+  setTimeout(function () { Garmin.maybe(); Weekly.check(); Push.checkZone(); }, 2500);
 });
 lsSet('ld.lastSeenDay', todayIso());
 

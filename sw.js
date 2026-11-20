@@ -1,6 +1,6 @@
 /* Keeps a copy of the app's own files so it opens without a connection.
    Diary data is never stored here. Raise the version to force a refresh. */
-var CACHE = 'life-diary-v17';
+var CACHE = 'life-diary-v18';
 var FILES = ['./', 'index.html', 'config.js', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', function (event) {
@@ -38,4 +38,25 @@ self.addEventListener('fetch', function (event) {
         .catch(function () { return fromCache.then(function (hit) { return hit || Response.error(); }); });
     })
   );
+});
+
+/* Notifications sent by the diary's server (daily reminder, "last week is over"). */
+self.addEventListener('push', function (event) {
+  var msg = {};
+  try { msg = event.data ? event.data.json() : {}; } catch (e) { msg = { body: event.data ? event.data.text() : '' }; }
+  event.waitUntil(self.registration.showNotification(msg.title || 'Life Diary', {
+    body: msg.body || '', tag: msg.tag || 'life-diary', icon: 'icon-192.png', badge: 'icon-192.png',
+    data: { url: msg.url || './' }
+  }));
+});
+self.addEventListener('notificationclick', function (event) {
+  event.notification.close();
+  var url = new URL((event.notification.data && event.notification.data.url) || './', self.registration.scope).href;
+  var open = new URL(url).searchParams.get('open');
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (list) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].url.indexOf(self.registration.scope) === 0) { list[i].postMessage({ open: open }); return list[i].focus(); }
+    }
+    return self.clients.openWindow(url);
+  }));
 });

@@ -128,3 +128,49 @@ alter table public.garmin_links enable row level security;
 revoke all on public.garmin_links from anon;
 revoke all on public.garmin_links from authenticated;
 grant all on public.garmin_links to service_role;
+
+-- Phone notifications ------------------------------------------------------------
+create extension if not exists pg_net;
+create extension if not exists pg_cron;
+
+-- Keys the server functions make for themselves (push keys, the schedule's password). Server only.
+create table public.app_secrets (
+  name text primary key,
+  value text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.app_secrets enable row level security;
+revoke all on public.app_secrets from anon;
+revoke all on public.app_secrets from authenticated;
+grant all on public.app_secrets to service_role;
+insert into public.app_secrets (name, value) values ('tick_secret', replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''));
+
+-- One row per phone that allowed notifications, with that phone's choices. Server only.
+create table public.push_subscriptions (
+  endpoint text primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  p256dh text not null,
+  auth text not null,
+  time_zone text not null default 'UTC',
+  daily_time text,                 -- 'HH:MM' local, or null for no daily reminder
+  weekly boolean not null default true,
+  last_daily_sent date,
+  last_weekly_sent date,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index push_subscriptions_user on public.push_subscriptions (user_id);
+alter table public.push_subscriptions enable row level security;
+revoke all on public.push_subscriptions from anon;
+revoke all on public.push_subscriptions from authenticated;
+grant all on public.push_subscriptions to service_role;
+
+-- Every 15 minutes, ask the push function to send whatever notifications are due.
+-- (Replace the project address if you set this up on another project.)
+select cron.schedule('life-diary-notifications', '*/15 * * * *', $$
+  select net.http_post(
+    url := 'https://grkxmegqoajgmepnsihq.supabase.co/functions/v1/push',
+    headers := jsonb_build_object('Content-Type', 'application/json',
+                                  'x-tick-secret', (select value from public.app_secrets where name = 'tick_secret')),
+    body := '{"action":"tick"}'::jsonb);
+$$);
