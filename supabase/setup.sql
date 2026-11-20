@@ -113,3 +113,18 @@ alter table public.screenshot_reads enable row level security;
 revoke all on public.screenshot_reads from anon;
 revoke all on public.screenshot_reads from authenticated;
 grant all on public.screenshot_reads to service_role;
+
+-- A person's Garmin Connect personal API key, and the 24-hour access token made from it.
+-- Only the "garmin" server function reads or writes this table; the app never gets the key back.
+create table public.garmin_links (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  api_key text not null,
+  access_token text,
+  token_expires_at timestamptz,
+  last_sync_at timestamptz,
+  created_at timestamptz not null default now()
+);
+alter table public.garmin_links enable row level security;
+revoke all on public.garmin_links from anon;
+revoke all on public.garmin_links from authenticated;
+grant all on public.garmin_links to service_role;

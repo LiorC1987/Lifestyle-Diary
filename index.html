@@ -68,6 +68,8 @@ button.card{display:block;width:100%;text-align:left}
 .seg:has(input:checked){border-color:var(--accent);background:var(--tint);color:var(--accent-dark);font-weight:600}
 .item:disabled .title{color:var(--muted)}
 .strong{font-weight:600}
+.block-card{display:block;width:100%;text-align:left}
+.steps-list{margin:8px 0 12px;padding-left:20px;font-size:14px;line-height:1.5}.steps-list li{margin:4px 0}
 .md h3{font-size:15px;font-weight:600;margin:14px 0 4px}.md h3:first-child{margin-top:0}.md p{margin:6px 0}.md ul{margin:6px 0;padding-left:20px}.md li{margin:3px 0}.md-table{overflow-x:auto;margin:8px 0}.balance{border-collapse:collapse;width:100%;font-size:14px}.balance th,.balance td{padding:6px 6px;border-bottom:1px solid var(--divider);text-align:right;white-space:nowrap}.balance th:first-child,.balance td:first-child{text-align:left;padding-left:0}.balance th{font-weight:600;color:var(--muted);font-size:13px}.balance tr.avg td{font-weight:600;border-bottom:0}.balance-chart{display:flex;align-items:stretch}.bcol{flex:1;display:flex;flex-direction:column;align-items:stretch}.bup,.bdown{height:40px;display:flex;justify-content:center}.bup{align-items:flex-end;border-bottom:1px solid var(--muted)}.bdown{align-items:flex-start}.bup span,.bdown span{width:60%;max-width:26px;border-radius:2px}.thin .bup span,.thin .bdown span{width:70%}.blab{font-size:12px;color:var(--muted);text-align:center;margin-top:4px}.bup span{background:var(--warn)}.bdown span{background:var(--accent)}.md table{border-collapse:collapse;width:100%;font-size:14px}.md th,.md td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line,rgba(127,127,127,.25))}.md th{font-weight:600}.md td:not(:first-child),.md th:not(:first-child){text-align:right;white-space:nowrap}
 .thumb{flex:none;width:56px;height:56px;border-radius:8px;object-fit:cover;background:var(--tint)}
 .photo-btn{display:block;width:100%;padding:0;border:0;background:none}
@@ -150,19 +152,20 @@ var CFG = window.LIFE_DIARY_CONFIG || {};
 
 var PREVIEW = !!CFG.preview;   // a try-out copy where files cannot be saved and data is not kept safely
 var APP_TAG = 'LifeDiary';
-var COLLECTIONS = ['moods', 'sleeps', 'weights', 'meals', 'activities', 'notes', 'customTrackers', 'customValues', 'settings'];
+var COLLECTIONS = ['moods', 'sleeps', 'weights', 'meals', 'activities', 'notes', 'customTrackers', 'customValues', 'settings', 'steps'];
 var MOODS = ['Low', 'Meh', 'OK', 'Good', 'Great'];
 var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 var KEYS = {
-  FOOD: 'tracker.food', MOOD: 'tracker.mood', SLEEP: 'tracker.sleep', WEIGHT: 'tracker.weight',
+  FOOD: 'tracker.food', MOOD: 'tracker.mood', SLEEP: 'tracker.sleep', WEIGHT: 'tracker.weight', STEPS: 'tracker.steps',
+  GARMIN: 'garmin.sync', WEEKLY: 'claude.weekly',
   ACTIVITY: 'tracker.activity', DREAMS: 'tracker.dreams', THOUGHTS: 'tracker.thoughts',
   AI: 'claude.summaries'   // off unless switched on: entries are sent to Claude only then
 };
 var DEFAULTS = {};
 DEFAULTS[KEYS.FOOD] = '1'; DEFAULTS[KEYS.MOOD] = '1'; DEFAULTS[KEYS.SLEEP] = '1'; DEFAULTS[KEYS.WEIGHT] = '1';
-DEFAULTS[KEYS.ACTIVITY] = '1'; DEFAULTS[KEYS.DREAMS] = '0'; DEFAULTS[KEYS.THOUGHTS] = '1';
+DEFAULTS[KEYS.ACTIVITY] = '1'; DEFAULTS[KEYS.DREAMS] = '0'; DEFAULTS[KEYS.THOUGHTS] = '1'; DEFAULTS[KEYS.STEPS] = '0';
 
 var BUILT_IN = [
   [KEYS.FOOD, 'Food', 'A line of text or a photo per meal'],
@@ -170,6 +173,7 @@ var BUILT_IN = [
   [KEYS.SLEEP, 'Sleep', 'Hours slept, entered by hand'],
   [KEYS.WEIGHT, 'Weight', 'Typed in, with date and time'],
   [KEYS.ACTIVITY, 'Activity', 'What you did and for how long'],
+  [KEYS.STEPS, 'Steps', 'A daily step count, typed in or from Garmin'],
   [KEYS.DREAMS, 'Dreams', 'Free text, best written on waking'],
   [KEYS.THOUGHTS, 'Thoughts', 'A few lines about the day']
 ];
@@ -385,7 +389,7 @@ function isEmpty(s) {
 }
 function daysWithEntries(s) {
   var set = {};
-  ['moods', 'sleeps', 'weights', 'meals', 'activities', 'notes', 'customValues'].forEach(function (k) {
+  ['moods', 'sleeps', 'weights', 'meals', 'activities', 'notes', 'customValues', 'steps'].forEach(function (k) {
     s[k].forEach(function (e) { set[e.localDate] = 1; });
   });
   return Object.keys(set).length;
@@ -667,6 +671,9 @@ function banners() {
   } else if (Cloud.access() === 'rejected') {
     out += '<button class="banner" data-act="openAccount">Your account was not approved, so your entries are kept on this device only.</button>';
   }
+  if (lsGet('ld.weeklyNew', '') && isOn(KEYS.AI)) {
+    out += '<button class="banner" data-act="openWeekly">Claude has written your summary of last week. Tap to read it.</button>';
+  }
   if (Cloud.waiting() > 0) {
     out += '<button class="banner" data-act="adminAccounts">' + (Cloud.waiting() === 1 ? '1 new account is' : Cloud.waiting() + ' new accounts are') +
       ' waiting for your approval. Tap to review.</button>';
@@ -709,7 +716,7 @@ function viewToday() {
     if (showSleep) {
       html += '<button class="card" data-act="openSleep"><div class="label">Sleep</div><div class="big">' +
         (sleep ? fmtDuration(sleep.durationMinutes) : 'Add') + '</div><div class="cap">' +
-        (sleep ? 'Entered by hand' : 'Hours slept last night') + '</div></button>';
+        (sleep ? (sleep.source === 'garmin' ? 'From Garmin' : 'Entered by hand') : 'Hours slept last night') + '</div></button>';
     }
     if (showWeight) {
       var latest = sortedWeights().filter(function (w) { return w.localDate <= d; }).pop();
@@ -719,6 +726,13 @@ function viewToday() {
         '</div></button>';
     }
     html += '</div>';
+  }
+
+  if (isOn(KEYS.STEPS)) {
+    var st = state.steps.find(function (e) { return e.localDate === d; });
+    html += '<button class="card block-card" data-act="openSteps"><div class="spread"><div class="label">Steps</div><div class="cap">' +
+      (st ? (st.source === 'garmin' ? 'From Garmin' : 'Typed in') : isOn(KEYS.GARMIN) ? 'Comes from Garmin' : 'Tap to add') + '</div></div><div class="big">' +
+      (st ? st.count.toLocaleString('en-US') : 'Add') + '</div></button>';
   }
 
   if (isOn(KEYS.FOOD)) {
@@ -906,7 +920,8 @@ function figures(start, end) {
     weights: weights, weightChange: change,
     meals: state.meals.filter(inRange).length,
     activeDays: Object.keys(activeDays).length,
-    activityMinutes: acts.reduce(function (a, e) { return a + e.durationMinutes; }, 0)
+    activityMinutes: acts.reduce(function (a, e) { return a + e.durationMinutes; }, 0),
+    stepsAvg: (function () { var xs = state.steps.filter(inRange).map(function (e) { return e.count; }); return xs.length ? average(xs) : null; })()
   };
 }
 /* change is in kilograms; it is rounded in the unit shown. */
@@ -931,6 +946,7 @@ function figureRows(period, f) {
   if (isOn(KEYS.ACTIVITY)) {
     rows.push(isDay ? ['Activity', fmtMinutes(f.activityMinutes)] : ['Active days', f.activeDays + ', ' + fmtMinutes(f.activityMinutes) + ' in total']);
   }
+  if (isOn(KEYS.STEPS)) rows.push([isDay ? 'Steps' : 'Average steps', f.stepsAvg == null ? 'No entries' : Math.round(f.stepsAvg).toLocaleString('en-US') + (isDay ? '' : ' a day')]);
   return rows;
 }
 function barHeight(minutes, stats) {
@@ -1094,6 +1110,146 @@ var Estimates = (function () {
   };
 })();
 
+/* Garmin sync: the "garmin" server function holds the personal API key and reads Garmin Connect. */
+var Garmin = (function () {
+  var busy = false, lastError = '';
+  function call(body) {
+    return Cloud.call('/functions/v1/garmin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json(); });
+  }
+  function removedIds() { try { return JSON.parse(getSetting('garmin.removed') || '[]'); } catch (e) { return []; } }
+  /* Adds what Garmin returned. Entries typed in by hand are kept; Garmin's own entries are updated. */
+  function merge(data) {
+    var changed = 0, gone = removedIds();
+    (data.activities || []).forEach(function (g) {
+      if (gone.indexOf(g.garminId) >= 0) return;
+      var a = state.activities.find(function (x) { return x.garminId === g.garminId; });
+      var when = parseIso(g.date);
+      if (g.start) { var t = g.start.split(':'); when.setHours(+t[0], +t[1], 0, 0); }
+      var fields = { localDate: g.date, recordedAt: when.getTime(), name: g.name, durationMinutes: g.durationMin, startTime: g.start, endTime: g.end,
+        distanceKm: g.distanceKm, activeKcal: g.activeKcal, totalKcal: g.totalKcal, avgHr: g.avgHr, source: 'garmin', garminId: g.garminId };
+      if (!a) { a = { id: nextId(state.activities), zoneOffset: currentOffset() }; state.activities.push(a); changed++; }
+      else if (a.source !== 'garmin') return;   // already edited by hand: leave it
+      Object.keys(fields).forEach(function (k) { if (a[k] !== fields[k]) { a[k] = fields[k]; changed++; } });
+    });
+    (data.sleep || []).forEach(function (g) {
+      var cur = state.sleeps.find(function (e) { return e.localDate === g.date; });
+      if (cur && cur.source !== 'garmin') return;
+      if (cur && cur.durationMinutes === g.minutes && cur.score === g.score) return;
+      if (cur) removeFrom('sleeps', cur);
+      state.sleeps.push({ localDate: g.date, durationMinutes: g.minutes, score: g.score || null, source: 'garmin', recordedAt: Date.now(), zoneOffset: currentOffset() });
+      changed++;
+    });
+    (data.steps || []).forEach(function (g) {
+      var cur = state.steps.find(function (e) { return e.localDate === g.date; });
+      if (cur && (cur.source !== 'garmin' || cur.count === g.steps)) return;
+      if (cur) removeFrom('steps', cur);
+      state.steps.push({ localDate: g.date, count: g.steps, source: 'garmin', recordedAt: Date.now(), zoneOffset: currentOffset() });
+      changed++;
+    });
+    return changed;
+  }
+  function sync(days, byUser) {
+    if (busy || !Cloud.approved() || !isOn(KEYS.GARMIN)) return Promise.resolve();
+    busy = true; lastError = ''; if (byUser) render();
+    var end = todayIso(), start = addDays(end, -(days - 1));
+    return call({ action: 'sync', start: start, end: end }).then(function (data) {
+      lsSet('ld.garminAt', Date.now());
+      var n = merge(data);
+      if (n) commit(); else render();
+      if (byUser) toast(n ? 'Garmin data added' : 'Already up to date');
+    }, function (e) {
+      lastError = e.auth ? 'Signed out' : e.message === 'Failed to fetch' || e.name === 'TypeError' ? 'No connection' : e.message || 'Garmin sync failed';
+      if (byUser) toast(lastError);
+      render();
+    }).then(function () { busy = false; render(); });
+  }
+  return {
+    busy: function () { return busy; },
+    statusLine: function () {
+      var at = lsGet('ld.garminAt', 0);
+      return lastError ? lastError : at ? 'Last synced ' + agoLabel(at) + '. Syncs by itself when you open the app.' : 'Connected. Waiting for the first sync.';
+    },
+    connect: function (key) {
+      return call({ action: 'connect', apiKey: key }).then(function () {
+        setSetting(KEYS.GARMIN, '1'); setSetting(KEYS.STEPS, '1'); commit();
+        return sync(14, true);
+      });
+    },
+    disconnect: function () {
+      return call({ action: 'disconnect' }).catch(function () {}).then(function () { setSetting(KEYS.GARMIN, '0'); lsSet('ld.garminAt', 0); commit(); });
+    },
+    syncNow: function () { return sync(7, true); },
+    /* On opening the app: catch up on the last three days, at most every two hours. */
+    maybe: function () {
+      if (!isOn(KEYS.GARMIN) || !Cloud.approved()) return;
+      var at = lsGet('ld.garminAt', 0);
+      if (Date.now() - at > 2 * 3600000) sync(at ? 3 : 14, false);
+    },
+    rememberRemoved: function (a) {
+      if (!a || !a.garminId) return;
+      var gone = removedIds(); if (gone.indexOf(a.garminId) < 0) gone.push(a.garminId);
+      setSetting('garmin.removed', JSON.stringify(gone.slice(-300)));
+    }
+  };
+})();
+function garminSheet() {
+  openSheet({
+    title: 'Connect Garmin',
+    body: '<p class="cap">The diary reads your workouts, sleep and daily steps from Garmin Connect, using a personal API key from your own Garmin account. Entries you type in yourself always stay as they are.</p>' +
+      '<ol class="steps-list"><li>Open <a href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noopener">Garmin Connect → Personal API key</a> and sign in.</li>' +
+      '<li>Tap <b>Create key</b>, accept the terms and choose the longest expiry.</li><li>Copy the key and paste it here.</li></ol>' +
+      field('Personal API key', '<input name="key" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" required>') +
+      '<p class="cap" id="garmin-status"></p>',
+    saveLabel: 'Connect',
+    onSubmit: function (v) {
+      var key = (v.key || '').trim(), status = document.getElementById('garmin-status');
+      if (key.length < 10) { toast('Paste the whole key'); return false; }
+      status.style.color = ''; status.textContent = 'Checking the key with Garmin…';
+      var btn = document.querySelector('.sheet button[type=submit]'); if (btn) btn.disabled = true;
+      Garmin.connect(key).then(function () { closeSheet(); toast('Garmin connected'); }, function (e) {
+        status.style.color = 'var(--warn)';
+        status.textContent = e.message === 'Failed to fetch' || e.name === 'TypeError' ? 'No connection. Try again when you are online.' : e.message || 'The key could not be checked.';
+        if (btn) btn.disabled = false;
+      });
+      return false;
+    }
+  });
+}
+
+/* Last week's summary, written by itself once the week is over (from 3:00 the next morning). */
+var Weekly = (function () {
+  var running = false;
+  function lastWeek() {
+    var now = new Date(), ref = todayIso();
+    if (now.getDay() === 0 && now.getHours() < 3) ref = addDays(ref, -1);   // still Saturday night
+    var start = addDays(sundayOf(ref), -7);
+    return [start, addDays(start, 6)];
+  }
+  function hasEntries(start, end) {
+    return ['moods', 'sleeps', 'weights', 'meals', 'activities', 'notes', 'steps'].some(function (k) {
+      return state[k].some(function (e) { return e.localDate >= start && e.localDate <= end; });
+    });
+  }
+  return {
+    check: function () {
+      if (running || !Claude.available() || !isOn(KEYS.WEEKLY)) return;
+      var w = lastWeek(), start = w[0], end = w[1];
+      if (lsGet('ld.weeklyDone', '') === start) return;
+      if (Claude.has('week', start) || !hasEntries(start, end)) { lsSet('ld.weeklyDone', start); return; }
+      running = true;
+      // Another device may have written it already.
+      Cloud.call('/rest/v1/summaries?select=id&period=eq.week&start_date=eq.' + start + '&limit=1').then(function (r) { return r.json(); })
+        .then(function (rows) {
+          if (Array.isArray(rows) && rows.length) { lsSet('ld.weeklyDone', start); return; }
+          return Claude.ask('week', start, end).then(function (ok) {
+            if (ok) { lsSet('ld.weeklyDone', start); lsSet('ld.weeklyNew', start); render(); }
+          });
+        }).catch(function () {}).then(function () { running = false; });
+    }
+  };
+})();
+
 /* A small Markdown reader for Claude's answers: headings, bullet points, simple tables, bold and paragraphs. */
 function markdown(text) {
   var out = [], list = false, para = [], table = null;
@@ -1143,14 +1299,14 @@ var Claude = (function () {
   }
   function ask(period, start, end) {
     var k = key(period, start);
-    if (asking[k]) return;
+    if (asking[k]) return Promise.resolve(false);
     asking[k] = true; errors[k] = ''; render();
-    var forPeriod = ui.period, forAnchor = ui.anchor;
+    var forPeriod = period, forAnchor = start;
     var wanted = periodPhotoNames(start, end);
     // Send only photos that are already in the account; save any new ones first.
     var ready = !wanted.length ? Promise.resolve({})
       : Cloud.sync(false).then(function () { return Cloud.listPhotos(); }).catch(function () { return {}; });
-    ready.then(function (online) {
+    return ready.then(function (online) {
       var photos = wanted.filter(function (n) { return online[n]; }).slice(-20);
       var nowPeriod = ui.period, nowAnchor = ui.anchor;
       ui.period = forPeriod; ui.anchor = forAnchor;
@@ -1163,11 +1319,13 @@ var Claude = (function () {
     }).then(function (r) { return r.json(); }).then(function (j) {
       cache[k] = { text: j.text, at: j.created_at || new Date().toISOString() }; keep();
       if (j.days) Estimates.put(j.days);
+      return true;
     }, function (e) {
       errors[k] = e.auth ? 'You are signed out. Sign in again under Trackers.'
         : e.message === 'Failed to fetch' || e.name === 'TypeError' ? 'No connection. Try again when you are online.'
         : e.message || 'Something went wrong. Try again.';
-    }).then(function () { asking[k] = false; render(); });
+      return false;
+    }).then(function (ok) { asking[k] = false; render(); return ok; });
   }
   return {
     available: function () { return !PREVIEW && Cloud.approved() && isOn(KEYS.AI); },
@@ -1175,6 +1333,7 @@ var Claude = (function () {
     asking: function (period, start) { return !!asking[key(period, start)]; },
     error: function (period, start) { return errors[key(period, start)] || ''; },
     ask: ask,
+    has: function (period, start) { return !!cache[key(period, start)]; },
     forget: function () { cache = {}; asking = {}; errors = {}; checked = {}; keep(); }
   };
 })();
@@ -1214,7 +1373,7 @@ function buildReport(attached) {
   }
   var prof = profileOf(end);
   if (isOn(KEYS.FOOD) && prof.complete) {
-    L.push('- Then a section called "Calorie balance". Estimate the calories I burned: start from the resting energy under "About me", add about 20% of it for everyday movement (a mostly sitting day), and add each logged activity, estimated from its type, duration and my weight; where an activity has active kcal measured by a watch, use that number instead of estimating.' +
+    L.push('- Then a section called "Calorie balance". Estimate the calories I burned: start from the resting energy under "About me", for everyday movement use the step count where one is logged (leaving out steps a logged activity already covers), and about 20% of it on days without steps (a mostly sitting day), and add each logged activity, estimated from its type, duration and my weight; where an activity has active kcal measured by a watch, use that number instead of estimating.' +
       (ui.period === 'day'
         ? ' Show a small table with rows: Eaten (the total from the nutrition estimate), Resting energy, Everyday movement, one row per logged activity, Total burned, and Balance (eaten minus burned, + for a surplus, − for a deficit).'
         : ' Show a small table with one row per day with meals logged, columns: day, eaten, burned, balance (+ for a surplus, − for a deficit), and a last row with the average.') +
@@ -1254,7 +1413,9 @@ function reportDay(iso, attached) {
   var mood = state.moods.find(on);
   if (mood && isOn(KEYS.MOOD)) out.push('- Mood: ' + MOODS[mood.level - 1] + ' (' + mood.level + '/5)');
   var sleep = state.sleeps.find(on);
-  if (sleep && isOn(KEYS.SLEEP)) out.push('- Sleep: ' + fmtDuration(sleep.durationMinutes));
+  if (sleep && isOn(KEYS.SLEEP)) out.push('- Sleep: ' + fmtDuration(sleep.durationMinutes) + (sleep.source === 'garmin' ? ' (Garmin' + (sleep.score ? ', sleep score ' + sleep.score : '') + ')' : ''));
+  var steps = state.steps.find(on);
+  if (steps && isOn(KEYS.STEPS)) out.push('- Steps: ' + steps.count.toLocaleString('en-US') + (steps.source === 'garmin' ? ' (Garmin)' : ''));
   if (isOn(KEYS.WEIGHT)) sortedWeights().filter(on).forEach(function (w) { out.push('- Weight: ' + fmtKg(w.kg) + ' at ' + timeOf(w.measuredAt, w.zoneOffset)); });
   if (isOn(KEYS.FOOD)) {
     state.meals.filter(on).sort(function (a, b) { return a.eatenAt - b.eatenAt; })
@@ -1264,7 +1425,7 @@ function reportDay(iso, attached) {
         out.push('- Meal at ' + timeOf(m.eatenAt, m.zoneOffset) + ': ' + (m.text ? oneLine(m.text) : '(no description)') + note);
       });
   }
-  if (isOn(KEYS.ACTIVITY)) state.activities.filter(on).forEach(function (a) { var w = a.source === 'screenshot' ? watchLine(a, true) : ''; out.push('- Activity: ' + oneLine(a.name) + ', ' + fmtMinutes(a.durationMinutes) + (w ? ' (measured by a watch: ' + w + ')' : '')); });
+  if (isOn(KEYS.ACTIVITY)) state.activities.filter(on).forEach(function (a) { var w = a.source === 'screenshot' || a.source === 'garmin' || a.source === 'garmin-edited' ? watchLine(a, true) : ''; out.push('- Activity: ' + oneLine(a.name) + ', ' + fmtMinutes(a.durationMinutes) + (w ? ' (measured by a watch: ' + w + ')' : '')); });
   state.notes.filter(on).forEach(function (n) {
     if (n.kind === 'dream' && isOn(KEYS.DREAMS)) out.push('- Dream: ' + oneLine(n.text));
     if (n.kind === 'thought' && isOn(KEYS.THOUGHTS)) out.push('- Thoughts: ' + oneLine(n.text));
@@ -1310,7 +1471,18 @@ function viewTrackers() {
       (!Cloud.signedIn() ? 'Needs the online account below.'
         : !Cloud.approved() ? 'Available once your account is approved.'
         : 'Get a summary written right on the Summary page. When you tap Ask Claude, that period\'s entries and meal photos are sent to Claude.') + '</span></span>' +
-      (Cloud.approved() ? switchBtn('toggle', KEYS.AI, 'Claude summaries', isOn(KEYS.AI)) : '') + '</div></section>';
+      (Cloud.approved() ? switchBtn('toggle', KEYS.AI, 'Claude summaries', isOn(KEYS.AI)) : '') + '</div>' +
+      (Cloud.approved() && isOn(KEYS.AI) ? '<div class="item"><span class="grow"><span class="title">Last week\'s summary, by itself</span><br><span class="sub">' +
+        'Once a week has ended, the first time you open the app from 3:00 the next morning, Claude writes that week\'s summary.</span></span>' +
+        switchBtn('toggle', KEYS.WEEKLY, 'Last week\'s summary, by itself', isOn(KEYS.WEEKLY)) + '</div>' : '') + '</section>';
+    html += '<section class="card flush" aria-label="Garmin sync"><div class="item"><span class="grow"><span class="title">Garmin sync</span><br><span class="sub">' +
+      (!Cloud.signedIn() ? 'Needs the online account below.'
+        : !Cloud.approved() ? 'Available once your account is approved.'
+        : isOn(KEYS.GARMIN) ? esc(Garmin.statusLine())
+        : 'Bring in workouts, sleep and steps from Garmin Connect. Needs a personal API key from your Garmin account.') + '</span></span>' +
+      (Cloud.approved() ? switchBtn('garminSwitch', KEYS.GARMIN, 'Garmin sync', isOn(KEYS.GARMIN)) : '') + '</div>' +
+      (Cloud.approved() && isOn(KEYS.GARMIN) ? '<div class="item"><button class="btn tint block" data-act="garminSyncNow"' + (Garmin.busy() ? ' disabled' : '') + '>' +
+        (Garmin.busy() ? 'Syncing…' : 'Sync now') + '</button></div>' : '') + '</section>';
   }
   html += '<section class="card flush" id="account" aria-label="Account"><h2 class="label pad">Online account</h2>' + accountCard() + '</section>';
 
@@ -1322,7 +1494,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.8.</p>';
+    '. Version 0.9.</p>';
   return html + '</main>';
 }
 function accountCard() {
@@ -1536,6 +1708,23 @@ function confirmSheet(title, message, label, onConfirm) {
   openSheet({ title: title, body: '<p>' + esc(message) + '</p>', saveLabel: label, autofocus: false, onSubmit: function () { onConfirm(); } });
 }
 
+function stepsSheet() {
+  var d = ui.date, cur = state.steps.find(function (e) { return e.localDate === d; });
+  openSheet({
+    title: 'Steps',
+    body: (cur && cur.source === 'garmin' ? '<p class="cap">From Garmin. A number you type in here is kept instead.</p>' : '') +
+      field('Steps on this day', '<input name="count" type="number" inputmode="numeric" min="0" max="200000" step="1" required value="' + (cur ? cur.count : '') + '">'),
+    extraLabel: cur ? 'Clear' : null,
+    onExtra: function () { removeFrom('steps', cur); commit(); },
+    onSubmit: function (v) {
+      var count = Math.round(Number(v.count));
+      if (!(count >= 0) || count > 200000) { toast('Enter the number of steps'); return false; }
+      if (cur) removeFrom('steps', cur);
+      state.steps.push({ localDate: d, count: count, source: 'manual', recordedAt: Date.now(), zoneOffset: currentOffset() });
+      commit();
+    }
+  });
+}
 function sleepSheet() {
   var d = ui.date, cur = state.sleeps.find(function (e) { return e.localDate === d; });
   openSheet({
@@ -1643,10 +1832,15 @@ function activitySheet(id) {
   openSheet({
     title: cur ? 'Edit activity' : 'Add an activity',
     autofocus: false,
-    body: (Claude.available() ? '<div class="field"><button type="button" class="btn tint block" data-act="activityShot">From a screenshot</button>' +
-        '<input type="file" id="shot-input" accept="image/*" hidden>' +
-        '<p class="cap mt8" id="shot-status">' + (cur && cur.source === 'screenshot' ? 'From the watch: ' + esc(watchLine(cur)) :
-          'Fill this in from a screenshot of a workout summary, from a watch or a fitness app.') + '</p></div>' : '') +
+    body: (function () {
+        var from = cur && cur.source === 'screenshot' ? 'From the watch: ' + esc(watchLine(cur))
+          : cur && /^garmin/.test(cur.source || '') ? 'From Garmin: ' + esc(watchLine(cur)) : '';
+        var can = Claude.available();
+        if (!can && !from) return '';
+        return '<div class="field">' + (can ? '<button type="button" class="btn tint block" data-act="activityShot">From a screenshot</button>' +
+          '<input type="file" id="shot-input" accept="image/*" hidden>' : '') +
+          '<p class="cap' + (can ? ' mt8' : '') + '" id="shot-status">' + (from || 'Fill this in from a screenshot of a workout summary, from a watch or a fitness app.') + '</p></div>';
+      })() +
       '<input type="hidden" name="watch" value="">' +
       field('What did you do?', '<select name="pick">' + (cur ? '' : '<option value="" selected disabled>Choose an activity</option>') +
         names.map(function (n) { return option(n, n, n === curName); }).join('') + option(OTHER, 'Other…', !nameListed) + '</select>') +
@@ -1657,7 +1851,7 @@ function activitySheet(id) {
       '<div id="other-dur"' + (minutesListed ? ' hidden' : '') + '>' +
         field('Duration, for example 45, 1:15 or 1h 20', '<input name="otherDur" type="text" autocomplete="off" value="' + (minutesListed ? '' : fmtMinutes(curMinutes)) + '">') + '</div>',
     extraLabel: cur ? 'Delete' : null,
-    onExtra: function () { removeFrom('activities', cur); commit(); },
+    onExtra: function () { Garmin.rememberRemoved(cur); removeFrom('activities', cur); commit(); },
     onSubmit: function (v) {
       var name = (v.pick === OTHER ? v.otherPick || '' : v.pick || '').trim();
       if (!name) { toast(v.pick === OTHER ? 'Write the activity' : 'Choose an activity'); return false; }
@@ -1666,6 +1860,7 @@ function activitySheet(id) {
       var w = null;
       try { w = v.watch ? JSON.parse(v.watch) : null; } catch (e) { w = null; }
       var a = cur || { id: nextId(state.activities), localDate: d, recordedAt: Date.now(), zoneOffset: currentOffset() };
+      if (cur && cur.source === 'garmin' && (cur.name !== name || cur.durationMinutes !== minutes)) cur.source = 'garmin-edited';
       a.name = name; a.durationMinutes = minutes;
       if (w) {
         // Numbers read from a watch screenshot; the workout keeps the day and time it happened.
@@ -2388,6 +2583,18 @@ var actions = {
     commit();
   },
   openSleep: function () { sleepSheet(); },
+  openSteps: function () { stepsSheet(); },
+  garminSwitch: function () {
+    if (isOn(KEYS.GARMIN)) {
+      if (confirm('Turn off Garmin sync? Entries already brought in stay in your diary.')) Garmin.disconnect();
+    } else garminSheet();
+  },
+  garminSyncNow: function () { Garmin.syncNow(); },
+  openWeekly: function () {
+    var start = lsGet('ld.weeklyNew', ''); lsSet('ld.weeklyNew', '');
+    if (start) { ui.tab = 'summary'; ui.period = 'week'; ui.anchor = start; }
+    render();
+  },
   openMeal: function (d) { mealSheet(d.id); },
   mealPhotoPick: function () { var input = document.getElementById('meal-photo-input'); if (input) input.click(); },
   mealPhotoRemove: function () { if (sheet) { sheet.photoNew = null; sheet.photoName = null; paintMealPhoto(); } },
@@ -2549,6 +2756,7 @@ Store.init().then(function () {
   cleanupPhotos();
   render();
   Cloud.start();
+  setTimeout(function () { Garmin.maybe(); Weekly.check(); }, 2500);
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
 });
 
@@ -2558,6 +2766,7 @@ document.addEventListener('visibilitychange', function () {
   if (ui.tab === 'today' && !sheet && lsGet('ld.lastSeenDay', '') !== todayIso()) { ui.date = todayIso(); ui.anchor = todayIso(); render(); }
   lsSet('ld.lastSeenDay', todayIso());
   Cloud.resumed();
+  setTimeout(function () { Garmin.maybe(); Weekly.check(); }, 2500);
 });
 lsSet('ld.lastSeenDay', todayIso());
 
