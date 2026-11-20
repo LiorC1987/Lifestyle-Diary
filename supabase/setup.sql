@@ -101,3 +101,15 @@ grant select on public.daily_estimates to authenticated;
 grant all on public.daily_estimates to service_role;
 create policy "Own estimates: read" on public.daily_estimates
   for select to authenticated using ((select auth.uid()) = user_id);
+
+-- One row per screenshot read by Claude, for the daily limit. Only the server function uses it.
+create table public.screenshot_reads (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index screenshot_reads_recent on public.screenshot_reads (user_id, created_at desc);
+alter table public.screenshot_reads enable row level security;
+revoke all on public.screenshot_reads from anon;
+revoke all on public.screenshot_reads from authenticated;
+grant all on public.screenshot_reads to service_role;

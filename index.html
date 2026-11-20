@@ -523,11 +523,11 @@ function cleanupPhotos() {
   });
 }
 /* Scales a chosen picture down to at most 1280 px on its long side and re-encodes it as a JPEG. */
-function shrinkImage(file) {
+function shrinkImage(file, maxSide, quality) {
   return new Promise(function (resolve, reject) {
     var url = URL.createObjectURL(file), img = new Image();
     img.onload = function () {
-      var scale = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+      var scale = Math.min(1, (maxSide || 1280) / Math.max(img.naturalWidth, img.naturalHeight));
       var canvas = document.createElement('canvas');
       canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
       canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
@@ -535,7 +535,7 @@ function shrinkImage(file) {
       g.fillStyle = '#fff'; g.fillRect(0, 0, canvas.width, canvas.height);
       g.drawImage(img, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
-      try { resolve(canvas.toDataURL('image/jpeg', 0.72)); } catch (e) { reject(e); }
+      try { resolve(canvas.toDataURL('image/jpeg', quality || 0.72)); } catch (e) { reject(e); }
     };
     img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('not a picture')); };
     img.src = url;
@@ -736,7 +736,7 @@ function viewToday() {
   if (isOn(KEYS.ACTIVITY)) {
     html += '<section class="card"><h2 class="label">Activity</h2><div class="chips mt10">' +
       acts.map(function (a) {
-        return '<button class="chip" data-act="editActivity" data-id="' + a.id + '">' + esc(a.name) + ', ' + fmtMinutes(a.durationMinutes) + '</button>';
+        return '<button class="chip" data-act="editActivity" data-id="' + a.id + '">' + esc(a.name) + ', ' + fmtMinutes(a.durationMinutes) + (a.activeKcal ? ', ' + Math.round(a.activeKcal) + ' kcal' : '') + '</button>';
       }).join('') +
       '<button class="seg" data-act="openActivity" aria-pressed="false">+ Add</button></div></section>';
   }
@@ -1214,7 +1214,7 @@ function buildReport(attached) {
   }
   var prof = profileOf(end);
   if (isOn(KEYS.FOOD) && prof.complete) {
-    L.push('- Then a section called "Calorie balance". Estimate the calories I burned: start from the resting energy under "About me", add about 20% of it for everyday movement (a mostly sitting day), and add each logged activity, estimated from its type, duration and my weight.' +
+    L.push('- Then a section called "Calorie balance". Estimate the calories I burned: start from the resting energy under "About me", add about 20% of it for everyday movement (a mostly sitting day), and add each logged activity, estimated from its type, duration and my weight; where an activity has active kcal measured by a watch, use that number instead of estimating.' +
       (ui.period === 'day'
         ? ' Show a small table with rows: Eaten (the total from the nutrition estimate), Resting energy, Everyday movement, one row per logged activity, Total burned, and Balance (eaten minus burned, + for a surplus, − for a deficit).'
         : ' Show a small table with one row per day with meals logged, columns: day, eaten, burned, balance (+ for a surplus, − for a deficit), and a last row with the average.') +
@@ -1264,7 +1264,7 @@ function reportDay(iso, attached) {
         out.push('- Meal at ' + timeOf(m.eatenAt, m.zoneOffset) + ': ' + (m.text ? oneLine(m.text) : '(no description)') + note);
       });
   }
-  if (isOn(KEYS.ACTIVITY)) state.activities.filter(on).forEach(function (a) { out.push('- Activity: ' + oneLine(a.name) + ', ' + fmtMinutes(a.durationMinutes)); });
+  if (isOn(KEYS.ACTIVITY)) state.activities.filter(on).forEach(function (a) { var w = a.source === 'screenshot' ? watchLine(a, true) : ''; out.push('- Activity: ' + oneLine(a.name) + ', ' + fmtMinutes(a.durationMinutes) + (w ? ' (measured by a watch: ' + w + ')' : '')); });
   state.notes.filter(on).forEach(function (n) {
     if (n.kind === 'dream' && isOn(KEYS.DREAMS)) out.push('- Dream: ' + oneLine(n.text));
     if (n.kind === 'thought' && isOn(KEYS.THOUGHTS)) out.push('- Thoughts: ' + oneLine(n.text));
@@ -1322,7 +1322,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.7.2.</p>';
+    '. Version 0.8.</p>';
   return html + '</main>';
 }
 function accountCard() {
@@ -1643,7 +1643,12 @@ function activitySheet(id) {
   openSheet({
     title: cur ? 'Edit activity' : 'Add an activity',
     autofocus: false,
-    body: field('What did you do?', '<select name="pick">' + (cur ? '' : '<option value="" selected disabled>Choose an activity</option>') +
+    body: (Claude.available() ? '<div class="field"><button type="button" class="btn tint block" data-act="activityShot">From a screenshot</button>' +
+        '<input type="file" id="shot-input" accept="image/*" hidden>' +
+        '<p class="cap mt8" id="shot-status">' + (cur && cur.source === 'screenshot' ? 'From the watch: ' + esc(watchLine(cur)) :
+          'Fill this in from a screenshot of a workout summary, from a watch or a fitness app.') + '</p></div>' : '') +
+      '<input type="hidden" name="watch" value="">' +
+      field('What did you do?', '<select name="pick">' + (cur ? '' : '<option value="" selected disabled>Choose an activity</option>') +
         names.map(function (n) { return option(n, n, n === curName); }).join('') + option(OTHER, 'Other…', !nameListed) + '</select>') +
       '<div id="other-pick"' + (nameListed ? ' hidden' : '') + '>' +
         field('Activity', '<input name="otherPick" type="text" autocomplete="off" value="' + (nameListed ? '' : esc(curName)) + '">') + '</div>' +
@@ -1658,9 +1663,20 @@ function activitySheet(id) {
       if (!name) { toast(v.pick === OTHER ? 'Write the activity' : 'Choose an activity'); return false; }
       var minutes = v.dur === OTHER ? parseDuration(v.otherDur || '') : Number(v.dur);
       if (!minutes || minutes < 1 || minutes > 1440) { toast('Enter how long, for example 45, 1:15 or 1h 20'); return false; }
-      if (cur) { cur.name = name; cur.durationMinutes = minutes; }
-      else state.activities.push({ id: nextId(state.activities), localDate: d, recordedAt: Date.now(), zoneOffset: currentOffset(), name: name, durationMinutes: minutes });
+      var w = null;
+      try { w = v.watch ? JSON.parse(v.watch) : null; } catch (e) { w = null; }
+      var a = cur || { id: nextId(state.activities), localDate: d, recordedAt: Date.now(), zoneOffset: currentOffset() };
+      a.name = name; a.durationMinutes = minutes;
+      if (w) {
+        // Numbers read from a watch screenshot; the workout keeps the day and time it happened.
+        if (w.date && w.date <= todayIso()) a.localDate = w.date;
+        if (w.start) { var t = w.start.split(':'), when = parseIso(a.localDate); when.setHours(+t[0], +t[1], 0, 0); a.recordedAt = when.getTime(); }
+        a.startTime = w.start || null; a.endTime = w.end || null; a.distanceKm = w.distanceKm || null;
+        a.activeKcal = w.activeKcal || null; a.totalKcal = w.totalKcal || null; a.avgHr = w.avgHr || null; a.source = 'screenshot';
+      }
+      if (!cur) state.activities.push(a);
       commit();
+      if (a.localDate !== d) toast('Saved on ' + weekdayName(a.localDate) + ' ' + dayMonth(a.localDate));
     }
   });
 }
@@ -1670,6 +1686,63 @@ document.addEventListener('change', function (e) {
   if (!box) return;
   box.hidden = e.target.value !== OTHER;
   if (!box.hidden) { var input = box.querySelector('input'); if (input) input.focus(); }
+});
+/* "Walked 14:21–14:45 · 1.7 km · 94 active kcal · avg 115 bpm": the numbers a watch screenshot gave. */
+function watchLine(a, forReport) {
+  var bits = [];
+  if (a.startTime) bits.push(a.startTime + (a.endTime ? '–' + a.endTime : ''));
+  if (a.distanceKm) bits.push(weightUnit() === 'lb' && !forReport ? fmt1(a.distanceKm / 1.609) + ' mi' : fmt1(a.distanceKm) + ' km');
+  if (a.activeKcal) bits.push(Math.round(a.activeKcal) + ' active kcal');
+  if (a.totalKcal && forReport) bits.push(Math.round(a.totalKcal) + ' total kcal');
+  if (a.avgHr) bits.push('avg heart rate ' + Math.round(a.avgHr) + (forReport ? ' bpm' : ''));
+  return bits.join(' · ');
+}
+function readActivityShot(file) {
+  var status = document.getElementById('shot-status'), btn = document.querySelector('[data-act=activityShot]');
+  var form = btn && btn.closest('form');
+  if (!status || !form) return;
+  status.style.color = ''; status.textContent = 'Claude is reading the screenshot…'; btn.disabled = true;
+  shrinkImage(file, 1600, 0.82).then(function (url) {
+    return Cloud.call('/functions/v1/read-screenshot', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: url, today: todayIso(), types: ACTIVITY_TYPES })
+    });
+  }).then(function (r) { return r.json(); }).then(function (w) {
+    if (!document.body.contains(form)) return;
+    // Activity name: the matching one from the list, otherwise the name as shown.
+    var pick = form.elements.pick, name = w.type || w.name || '';
+    var listed = name && Array.prototype.some.call(pick.options, function (o) { return o.value === name; });
+    pick.value = listed ? name : OTHER;
+    document.getElementById('other-pick').hidden = listed;
+    if (!listed) form.elements.otherPick.value = w.name || '';
+    // Duration: from the screenshot, or from its start and end times.
+    var m = w.duration_min ? Math.round(w.duration_min) : 0;
+    if (!m && w.start && w.end) {
+      var s = w.start.split(':'), e = w.end.split(':');
+      m = ((+e[0] * 60 + +e[1]) - (+s[0] * 60 + +s[1]) + 1440) % 1440;
+    }
+    if (m) {
+      var inList = DURATIONS.some(function (x) { return x[0] === m; });
+      form.elements.dur.value = inList ? String(m) : OTHER;
+      document.getElementById('other-dur').hidden = inList;
+      if (!inList) form.elements.otherDur.value = m < 60 ? String(m) : Math.floor(m / 60) + ':' + ('0' + (m % 60)).slice(-2);
+    }
+    var keep = { date: w.date, start: w.start, end: w.end, distanceKm: w.distance_km, activeKcal: w.active_kcal, totalKcal: w.total_kcal, avgHr: w.avg_hr };
+    form.elements.watch.value = JSON.stringify(keep);
+    var line = watchLine({ startTime: w.start, endTime: w.end, distanceKm: w.distance_km, activeKcal: w.active_kcal, avgHr: w.avg_hr });
+    status.textContent = 'Read: ' + (w.name || name) + (line ? ' · ' + line : '') +
+      (w.date && w.date !== ui.date ? '. It will be saved on ' + weekdayName(w.date) + ' ' + dayMonth(w.date) + '.' : '.') +
+      (m ? '' : ' Choose how long it was.') + ' Check it, then tap Save.';
+  }, function (e) {
+    status.style.color = 'var(--warn)';
+    status.textContent = e.auth ? 'You are signed out. Sign in again under Trackers.'
+      : e.message === 'not a picture' ? 'That file is not a picture.'
+      : e.message === 'Failed to fetch' || e.name === 'TypeError' ? 'No connection. Try again when you are online.'
+      : e.message || 'The screenshot could not be read. Try again.';
+  }).then(function () { if (btn) btn.disabled = false; });
+}
+document.addEventListener('change', function (e) {
+  if (e.target.id === 'shot-input' && e.target.files && e.target.files[0]) { readActivityShot(e.target.files[0]); e.target.value = ''; }
 });
 function noteSheet(kind) {
   var d = ui.date, cur = state.notes.find(function (n) { return n.localDate === d && n.kind === kind; });
@@ -2325,6 +2398,7 @@ var actions = {
   },
   closeViewer: function () { closeViewer(); },
   openActivity: function () { activitySheet(null); },
+  activityShot: function () { var i = document.getElementById('shot-input'); if (i) i.click(); },
   editActivity: function (d) { activitySheet(d.id); },
   openNote: function (d) { noteSheet(d.kind); },
   customSet: function (d) {
