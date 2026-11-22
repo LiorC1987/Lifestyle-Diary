@@ -69,6 +69,7 @@ button.card{display:block;width:100%;text-align:left}
 .item:disabled .title{color:var(--muted)}
 .strong{font-weight:600}
 .block-card{display:block;width:100%;text-align:left}
+.sheet details summary{cursor:pointer;padding:10px 0;list-style-position:inside}
 .steps-list{margin:8px 0 12px;padding-left:20px;font-size:14px;line-height:1.5}.steps-list li{margin:4px 0}
 .md h3{font-size:15px;font-weight:600;margin:14px 0 4px}.md h3:first-child{margin-top:0}.md p{margin:6px 0}.md ul{margin:6px 0;padding-left:20px}.md li{margin:3px 0}.md-table{overflow-x:auto;margin:8px 0}.balance{border-collapse:collapse;width:100%;font-size:14px}.balance th,.balance td{padding:6px 6px;border-bottom:1px solid var(--divider);text-align:right;white-space:nowrap}.balance th:first-child,.balance td:first-child{text-align:left;padding-left:0}.balance th{font-weight:600;color:var(--muted);font-size:13px}.balance tr.avg td{font-weight:600;border-bottom:0}.balance-chart{display:flex;align-items:stretch}.bcol{flex:1;display:flex;flex-direction:column;align-items:stretch}.bup,.bdown{height:40px;display:flex;justify-content:center}.bup{align-items:flex-end;border-bottom:1px solid var(--muted)}.bdown{align-items:flex-start}.bup span,.bdown span{width:60%;max-width:26px;border-radius:2px}.thin .bup span,.thin .bdown span{width:70%}.blab{font-size:12px;color:var(--muted);text-align:center;margin-top:4px}.bup span{background:var(--warn)}.bdown span{background:var(--accent)}.md table{border-collapse:collapse;width:100%;font-size:14px}.md th,.md td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line,rgba(127,127,127,.25))}.md th{font-weight:600}.md td:not(:first-child),.md th:not(:first-child){text-align:right;white-space:nowrap}
 .thumb{flex:none;width:56px;height:56px;border-radius:8px;object-fit:cover;background:var(--tint)}
@@ -324,9 +325,13 @@ function restingEnergy(kg, cm, age, sex) {
 function profileOf(endIso) {
   var cm = Number(getSetting('profile.heightCm')) || null, age = ageOn(getSetting('profile.birthday'), endIso);
   var w = weightNear(endIso), sex = getSetting('profile.sex');
-  var p = { cm: cm, age: age, weight: w, sex: sex };
-  p.complete = !!(cm && age != null && w);
-  p.rest = p.complete ? restingEnergy(w.kg, cm, age, sex) : null;
+  // A body-fat reading from within two months makes resting energy personal (lean mass).
+  var withFat = sortedWeights().filter(function (x) { return x.bodyFatPct != null && x.localDate <= endIso && x.localDate >= addDays(endIso, -60); });
+  var fat = withFat.length ? withFat[withFat.length - 1] : null;
+  var p = { cm: cm, age: age, weight: w, sex: sex, fat: fat };
+  p.complete = !!(w && (fat || (cm && age != null)));
+  p.lean = fat ? fat.kg * (1 - fat.bodyFatPct / 100) : null;
+  p.rest = !p.complete ? null : fat ? Math.round((370 + 21.6 * p.lean) / 10) * 10 : restingEnergy(w.kg, cm, age, sex);
   return p;
 }
 function profileSheet() {
@@ -1606,17 +1611,24 @@ function buildReport(attached) {
         : ' Show a small table with one row per day with meals logged, columns: day, eaten, burned, balance (+ for a surplus, − for a deficit), and a last row with the average.') +
       ' Where meals look incompletely logged, or the day is not over yet, say so instead of reading it as a deficit. End the section with this sentence: "' + NUTRITION_NOTE + '"');
   } else if (isOn(KEYS.FOOD)) {
-    L.push('- Do not estimate calories burned, because my ' + [prof.age == null ? 'age' : '', !prof.cm ? 'height' : '', !prof.weight ? 'weight' : ''].filter(Boolean).join(' and ') +
-      ' is missing. Mention once, in one sentence, that adding ' + (!prof.weight && (prof.age == null || !prof.cm) ? 'them under Trackers → About you and logging a weight' : !prof.weight ? 'a weight entry' : 'them under Trackers → About you') + ' would allow a calorie-balance estimate.');
+    var needAbout = prof.age == null || !prof.cm;
+    L.push('- Do not estimate calories burned, because my ' + [needAbout && prof.age == null ? 'age' : '', needAbout && !prof.cm ? 'height' : '', !prof.weight ? 'weight' : ''].filter(Boolean).join(' and ') +
+      ' is missing. Mention once, in one sentence, that adding ' + (!prof.weight && needAbout ? 'them under Trackers → About you and logging a weight' : !prof.weight ? 'a weight entry' : 'them under Trackers → About you (or a smart-scale reading with body fat)') + ' would allow a calorie-balance estimate.');
   }
   L.push('');
   L.push('Mood is recorded on a scale from 1 (low) to 5 (great). Sleep is the time slept the night before each date. Weeks run Sunday to Saturday.', '');
 
   if (isOn(KEYS.FOOD) && prof.complete) {
     L.push('## About me', '');
-    L.push('- Age: ' + prof.age + ', height: ' + prof.cm + ' cm, weight: ' + fmt1(prof.weight.kg) + ' kg (logged ' + dayMonth(prof.weight.localDate) + ')' +
-      (prof.sex ? ', sex: ' + prof.sex : ', sex not given'));
-    L.push('- Resting energy (Mifflin-St Jeor formula' + (prof.sex ? '' : ', midway between the male and female versions') + '): about ' + prof.rest + ' kcal a day', '');
+    L.push('- ' + [prof.age != null ? 'Age: ' + prof.age : '', prof.cm ? 'height: ' + prof.cm + ' cm' : '', 'weight: ' + fmt1(prof.weight.kg) + ' kg (logged ' + dayMonth(prof.weight.localDate) + ')',
+      prof.sex ? 'sex: ' + prof.sex : 'sex not given'].filter(Boolean).join(', '));
+    if (prof.fat) {
+      L.push('- Body composition from a smart scale (' + dayMonth(prof.fat.localDate) + '): ' + bodyLine(prof.fat, true) + '; lean mass about ' + fmt1(prof.lean) + ' kg');
+      L.push('- Resting energy (Katch-McArdle formula, from lean mass): about ' + prof.rest + ' kcal a day' + (prof.fat.scaleBmr ? '; the scale itself says ' + Math.round(prof.fat.scaleBmr) + ' kcal' : ''));
+      L.push('- Scale body-fat readings vary by a few percent from day to day; read their trend over weeks, not single readings.', '');
+    } else {
+      L.push('- Resting energy (Mifflin-St Jeor formula' + (prof.sex ? '' : ', midway between the male and female versions') + '): about ' + prof.rest + ' kcal a day', '');
+    }
   }
   dayTable(start, end).forEach(function (l) { L.push(l); });
   recentContext(ui.period, start).forEach(function (l) { L.push(l); });
@@ -1654,6 +1666,9 @@ function dayTable(start, end) {
   }
   if (isOn(KEYS.WATER)) cols.push(['Water (L)', function (iso) { var t = waterTotal(iso); return t ? fmt1(t / 1000) : ''; }]);
   if (isOn(KEYS.WEIGHT)) cols.push(['Weight (kg)', function (iso) { var x = sortedWeights().filter(on(iso)); return x.length ? fmt1(x[0].kg) : ''; }]);
+  if (isOn(KEYS.WEIGHT) && state.weights.some(function (w) { return w.bodyFatPct != null && w.localDate >= start && w.localDate <= end; })) {
+    cols.push(['Body fat (%)', function (iso) { var x = sortedWeights().filter(function (w) { return w.localDate === iso && w.bodyFatPct != null; }); return x.length ? fmt1(x[0].bodyFatPct) : ''; }]);
+  }
   state.customTrackers.filter(function (t) { return t.enabled && t.type !== 'text'; }).slice(0, 4).forEach(function (t) {
     cols.push([t.name + (t.unit ? ' (' + t.unit + ')' : ''), function (iso) {
       var v = state.customValues.find(function (x) { return x.trackerId === t.id && x.localDate === iso; });
@@ -1699,7 +1714,7 @@ function reportDay(iso, attached) {
     ' (' + drinks.map(function (w) { return fmtWater(w.ml, 'l') + ' at ' + timeOf(w.recordedAt, w.zoneOffset); }).join(', ') + ')');
   var steps = state.steps.find(on);
   if (steps && isOn(KEYS.STEPS)) out.push('- Steps: ' + steps.count.toLocaleString('en-US') + (steps.source === 'garmin' ? ' (Garmin)' : ''));
-  if (isOn(KEYS.WEIGHT)) sortedWeights().filter(on).forEach(function (w) { out.push('- Weight: ' + fmtKg(w.kg) + ' at ' + timeOf(w.measuredAt, w.zoneOffset)); });
+  if (isOn(KEYS.WEIGHT)) sortedWeights().filter(on).forEach(function (w) { var b = bodyLine(w, true); out.push('- Weight: ' + fmtKg(w.kg) + ' at ' + timeOf(w.measuredAt, w.zoneOffset) + (b ? ' (smart scale: ' + b + ')' : '')); });
   if (isOn(KEYS.FOOD)) {
     state.meals.filter(on).sort(function (a, b) { return a.eatenAt - b.eatenAt; })
       .forEach(function (m) {
@@ -1782,7 +1797,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.11.</p>';
+    '. Version 0.12.</p>';
   return html + '</main>';
 }
 function accountCard() {
@@ -1916,7 +1931,7 @@ function viewWeight() {
   if (inRange.length) {
     html += '<section class="card flush"><h2 class="label pad">Weigh-ins</h2>' + inRange.slice().reverse().map(function (w) {
       return '<button class="item" style="min-height:48px" data-act="editWeight" data-id="' + w.id + '"><span class="grow">' + shortDay(w.localDate) + ', ' +
-        timeOf(w.measuredAt, w.zoneOffset) + '</span><span class="strong">' + fmtKg(w.kg) + '</span></button>';
+        timeOf(w.measuredAt, w.zoneOffset) + (w.bodyFatPct != null ? ' · ' + fmt1(w.bodyFatPct) + '% fat' : '') + '</span><span class="strong">' + fmtKg(w.kg) + '</span></button>';
     }).join('') + '</section>';
   }
   return html + '<button class="btn primary block" data-act="addWeight">Add weigh-in</button></main>';
@@ -2274,29 +2289,91 @@ function customTextSheet(id) {
     onSubmit: function (v) { setCustomValue(t, null, v.text.trim()); }
   });
 }
-function weightSheet(id) {
-  var cur = id ? byId(state.weights, id) : null;
+/* Optional smart-scale numbers kept with a weigh-in. Masses in kg, shown in the weight unit. */
+var BODY_FIELDS = [
+  ['bodyFatPct', 'Body fat', '%', 2, 75], ['muscleKg', 'Muscle mass', 'mass', 5, 200], ['skeletalMusclePct', 'Skeletal muscle', '%', 5, 80],
+  ['fatFreeKg', 'Fat-free body weight', 'mass', 10, 250], ['visceralFat', 'Visceral fat (rating)', '', 1, 60], ['waterPct', 'Body water', '%', 20, 90],
+  ['boneKg', 'Bone mass', 'mass', 0.5, 20], ['proteinPct', 'Protein', '%', 5, 40], ['subcutFatPct', 'Subcutaneous fat', '%', 2, 75],
+  ['scaleBmr', 'BMR shown by the scale', 'kcal', 500, 5000]
+];
+function bodyLine(w, forReport) {
+  return BODY_FIELDS.filter(function (f) { return w[f[0]] != null; }).map(function (f) {
+    var v = w[f[0]];
+    var shown = f[2] === 'mass' ? (forReport ? fmt1(v) + ' kg' : fmtKg(v)) : f[2] === '%' ? fmt1(v) + '%' : f[2] === 'kcal' ? Math.round(v) + ' kcal' : fmtNumber(v);
+    return f[1].replace(' (rating)', '').toLowerCase() + ' ' + shown;
+  }).join(', ');
+}
+function weightSheet(id, preset) {
+  var cur = id ? byId(state.weights, id) : null, from = preset || cur || {};
+  var hasBody = BODY_FIELDS.some(function (f) { return from[f[0]] != null; });
+  var unitLabel = function (f) { return f[2] === 'mass' ? weightUnit() : f[2]; };
+  var shownValue = function (f) {
+    var v = from[f[0]]; if (v == null) return '';
+    return f[2] === 'mass' ? fmt1(toUnit(v)) : f[2] === 'kcal' ? String(Math.round(v)) : String(Math.round(v * 10) / 10);
+  };
   openSheet({
     title: cur ? 'Edit weigh-in' : 'Add weigh-in',
-    body: field('Weight in ' + weightUnit(), '<input name="kg" type="text" inputmode="decimal" required value="' + (cur ? fmt1(toUnit(cur.kg)) : '') + '">') +
-      '<div class="row wide">' + field('Date', '<input name="date" type="date" required max="' + todayIso() + '" value="' + (cur ? cur.localDate : todayIso()) + '">') +
-      field('Time', '<input name="time" type="time" required value="' + (cur ? timeOf(cur.measuredAt, cur.zoneOffset) : nowHHMM()) + '">') + '</div>',
+    body: (Claude.available() && !cur ? '<div class="field"><button type="button" class="btn tint block" data-act="scaleShot">From a smart-scale screenshot</button>' +
+        '<input type="file" id="scale-input" accept="image/*" hidden><p class="cap mt8" id="scale-status">' +
+        (preset ? 'Read from the screenshot. Check the numbers, then tap Save.' : 'Fill this in from a screenshot of your scale\'s app, with body fat and the rest.') + '</p></div>' : '') +
+      field('Weight in ' + weightUnit(), '<input name="kg" type="text" inputmode="decimal" required value="' + (from.kg != null ? fmt1(toUnit(from.kg)) : '') + '">') +
+      '<div class="row wide">' + field('Date', '<input name="date" type="date" required max="' + todayIso() + '" value="' + (from.localDate || todayIso()) + '">') +
+      field('Time', '<input name="time" type="time" required value="' + (cur ? timeOf(cur.measuredAt, cur.zoneOffset) : from.time || nowHHMM()) + '">') + '</div>' +
+      '<details class="mt8"' + (hasBody ? ' open' : '') + '><summary class="strong">Body composition (optional)</summary>' +
+      '<p class="cap mt8">From a smart scale. Body fat makes the calorie estimates more personal.</p>' +
+      BODY_FIELDS.map(function (f) {
+        return field(f[1] + (unitLabel(f) ? ' (' + unitLabel(f) + ')' : ''), '<input name="' + f[0] + '" type="text" inputmode="decimal" autocomplete="off" value="' + shownValue(f) + '">');
+      }).join('') + '</details>',
     extraLabel: cur ? 'Delete' : null,
     onExtra: function () { removeFrom('weights', cur); commit(); },
     onSubmit: function (v) {
       var typed = parseNumber(v.kg);
       // An unchanged value keeps the exact stored weight, so switching units never shifts it.
-      var kg = cur && v.kg.trim() === fmt1(toUnit(cur.kg)) ? cur.kg : typed == null ? null : fromUnit(typed);
+      var kg = cur && v.kg.trim() === fmt1(toUnit(cur.kg)) ? cur.kg : preset && preset.kg != null && v.kg.trim() === fmt1(toUnit(preset.kg)) ? preset.kg : typed == null ? null : fromUnit(typed);
       if (kg == null || kg <= 20 || kg >= 400) { toast('Enter a weight in ' + weightUnit()); return false; }
       if (v.date > todayIso()) { toast('The date cannot be in the future'); return false; }
+      var body = {};
+      for (var i = 0; i < BODY_FIELDS.length; i++) {
+        var f = BODY_FIELDS[i], raw = (v[f[0]] || '').trim();
+        if (!raw) continue;
+        var n = parseNumber(raw);
+        if (f[2] === 'mass' && n != null) n = from[f[0]] != null && raw === fmt1(toUnit(from[f[0]])) ? from[f[0]] : fromUnit(n);
+        if (n == null || n < f[3] || n > f[4]) { toast('Check ' + f[1].toLowerCase()); return false; }
+        body[f[0]] = n;
+      }
       var offset = cur ? cur.zoneOffset : currentOffset();
-      var entry = { id: cur ? cur.id : nextId(state.weights), localDate: v.date, measuredAt: toEpoch(v.date, v.time, offset), zoneOffset: offset, kg: kg, source: cur ? cur.source : 'manual' };
+      var entry = { id: cur ? cur.id : nextId(state.weights), localDate: v.date, measuredAt: toEpoch(v.date, v.time, offset), zoneOffset: offset, kg: kg,
+        source: cur ? cur.source : preset ? 'screenshot' : 'manual' };
+      Object.keys(body).forEach(function (k) { entry[k] = body[k]; });
       if (cur) removeFrom('weights', cur);
       state.weights.push(entry);
       commit();
     }
   });
 }
+function readScaleShot(file) {
+  var status = document.getElementById('scale-status'), btn = document.querySelector('[data-act=scaleShot]');
+  if (!status || !btn) return;
+  status.style.color = ''; status.textContent = 'Claude is reading the screenshot…'; btn.disabled = true;
+  shrinkImage(file, 1600, 0.82).then(function (url) {
+    return Cloud.call('/functions/v1/read-screenshot', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: url, today: todayIso(), kind: 'scale' }) });
+  }).then(function (r) { return r.json(); }).then(function (m) {
+    var preset = { kg: m.weight_kg, localDate: m.date || todayIso(), time: m.time, bodyFatPct: m.body_fat_pct, muscleKg: m.muscle_mass_kg,
+      skeletalMusclePct: m.skeletal_muscle_pct, fatFreeKg: m.fat_free_kg, visceralFat: m.visceral_fat, waterPct: m.body_water_pct,
+      boneKg: m.bone_mass_kg, proteinPct: m.protein_pct, subcutFatPct: m.subcutaneous_fat_pct, scaleBmr: m.bmr_kcal };
+    closeSheet(); weightSheet(null, preset);
+  }, function (e) {
+    status.style.color = 'var(--warn)';
+    status.textContent = e.auth ? 'You are signed out. Sign in again under Trackers.'
+      : e.message === 'Failed to fetch' || e.name === 'TypeError' ? 'No connection. Try again when you are online.'
+      : e.message || 'The screenshot could not be read. Try again.';
+    btn.disabled = false;
+  });
+}
+document.addEventListener('change', function (e) {
+  if (e.target.id === 'scale-input' && e.target.files && e.target.files[0]) { readScaleShot(e.target.files[0]); e.target.value = ''; }
+});
 function trackerSheet(id) {
   var cur = id ? byId(state.customTrackers, id) : null;
   var typeName = cur ? (TRACKER_TYPES.find(function (x) { return x[0] === cur.type; }) || TRACKER_TYPES[0])[1] : '';
@@ -2901,6 +2978,7 @@ var actions = {
   closeViewer: function () { closeViewer(); },
   openActivity: function () { activitySheet(null); },
   activityShot: function () { var i = document.getElementById('shot-input'); if (i) i.click(); },
+  scaleShot: function () { var i = document.getElementById('scale-input'); if (i) i.click(); },
   editActivity: function (d) { activitySheet(d.id); },
   openNote: function (d) { noteSheet(d.kind); },
   customSet: function (d) {
