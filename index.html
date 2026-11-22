@@ -152,20 +152,20 @@ var CFG = window.LIFE_DIARY_CONFIG || {};
 
 var PREVIEW = !!CFG.preview;   // a try-out copy where files cannot be saved and data is not kept safely
 var APP_TAG = 'LifeDiary';
-var COLLECTIONS = ['moods', 'sleeps', 'weights', 'meals', 'activities', 'notes', 'customTrackers', 'customValues', 'settings', 'steps'];
+var COLLECTIONS = ['moods', 'sleeps', 'weights', 'meals', 'activities', 'notes', 'customTrackers', 'customValues', 'settings', 'steps', 'water'];
 var MOODS = ['Low', 'Meh', 'OK', 'Good', 'Great'];
 var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 var KEYS = {
-  FOOD: 'tracker.food', MOOD: 'tracker.mood', SLEEP: 'tracker.sleep', WEIGHT: 'tracker.weight', STEPS: 'tracker.steps',
+  FOOD: 'tracker.food', MOOD: 'tracker.mood', SLEEP: 'tracker.sleep', WEIGHT: 'tracker.weight', STEPS: 'tracker.steps', WATER: 'tracker.water',
   GARMIN: 'garmin.sync', WEEKLY: 'claude.weekly',
   ACTIVITY: 'tracker.activity', DREAMS: 'tracker.dreams', THOUGHTS: 'tracker.thoughts',
   AI: 'claude.summaries'   // off unless switched on: entries are sent to Claude only then
 };
 var DEFAULTS = {};
 DEFAULTS[KEYS.FOOD] = '1'; DEFAULTS[KEYS.MOOD] = '1'; DEFAULTS[KEYS.SLEEP] = '1'; DEFAULTS[KEYS.WEIGHT] = '1';
-DEFAULTS[KEYS.ACTIVITY] = '1'; DEFAULTS[KEYS.DREAMS] = '0'; DEFAULTS[KEYS.THOUGHTS] = '1'; DEFAULTS[KEYS.STEPS] = '0';
+DEFAULTS[KEYS.ACTIVITY] = '1'; DEFAULTS[KEYS.DREAMS] = '0'; DEFAULTS[KEYS.THOUGHTS] = '1'; DEFAULTS[KEYS.STEPS] = '0'; DEFAULTS[KEYS.WATER] = '0';
 
 var BUILT_IN = [
   [KEYS.FOOD, 'Food', 'A line of text or a photo per meal'],
@@ -174,6 +174,7 @@ var BUILT_IN = [
   [KEYS.WEIGHT, 'Weight', 'Typed in, with date and time'],
   [KEYS.ACTIVITY, 'Activity', 'What you did and for how long'],
   [KEYS.STEPS, 'Steps', 'A daily step count, typed in or from Garmin'],
+  [KEYS.WATER, 'Water', 'Each drink by amount, like a 1.5 L bottle'],
   [KEYS.DREAMS, 'Dreams', 'Free text, best written on waking'],
   [KEYS.THOUGHTS, 'Thoughts', 'A few lines about the day']
 ];
@@ -237,6 +238,47 @@ function weightUnit() {
 function toUnit(kg) { return weightUnit() === 'lb' ? kg * LB_PER_KG : kg; }
 function fromUnit(value) { return weightUnit() === 'lb' ? value / LB_PER_KG : value; }
 function fmtKg(kg) { return fmt1(toUnit(kg)) + ' ' + weightUnit(); }
+
+/* Water is kept in millilitres and shown in liters, US fluid ounces or US cups. */
+var WATER_UNITS = { l: { ml: 1000, label: 'L', name: 'Liters (L)', quick: [0.25, 0.33, 0.5, 0.6, 1, 1.5] },
+  floz: { ml: 29.5735, label: 'fl oz', name: 'Fluid ounces (fl oz)', quick: [8, 12, 16.9, 20, 24, 33.8] },
+  cup: { ml: 236.588, label: 'cups', name: 'Cups', quick: [0.5, 1, 1.5, 2, 3, 4] } };
+function waterUnit() { var u = getSetting('unit.water'); return WATER_UNITS[u] ? u : 'l'; }
+function fmtWater(ml, unit) {
+  var u = WATER_UNITS[unit || waterUnit()], v = ml / u.ml;
+  var shown = u === WATER_UNITS.floz ? String(Math.round(v)) : String(Math.round(v * 100) / 100);
+  return shown + ' ' + (u === WATER_UNITS.cup && shown === '1' ? 'cup' : u.label);
+}
+function waterOn(iso) { return state.water.filter(function (w) { return w.localDate === iso; }).sort(function (a, b) { return a.recordedAt - b.recordedAt; }); }
+function waterTotal(iso) { return waterOn(iso).reduce(function (a, w) { return a + w.ml; }, 0); }
+function addWater(amount) {
+  var ml = Math.round(amount * WATER_UNITS[waterUnit()].ml);
+  var d = ui.date, now = new Date(), when = parseIso(d);
+  when.setHours(now.getHours(), now.getMinutes(), 0, 0);   // logged later for an earlier day: today's time on that day
+  state.water.push({ id: nextId(state.water), localDate: d, ml: ml, recordedAt: d === todayIso() ? Date.now() : when.getTime(), zoneOffset: currentOffset() });
+  commit();
+  toast('Added ' + fmtWater(ml) + ' · ' + fmtWater(waterTotal(d)) + ' today');
+}
+function waterSheet(id) {
+  var cur = id != null ? state.water.find(function (w) { return w.id === id; }) : null, u = WATER_UNITS[waterUnit()];
+  openSheet({
+    title: cur ? 'Edit drink' : 'Add water',
+    body: (cur ? '' : '<div class="chips" role="group" aria-label="Common sizes">' + u.quick.map(function (q) {
+        return '<button type="button" class="chip" data-act="waterQuick" data-val="' + q + '">' + q + ' ' + u.label + '</button>';
+      }).join('') + '</div><p class="cap mt8">Tap a size to add it, or type the amount.</p>') +
+      field('Amount in ' + (u === WATER_UNITS.l ? 'liters' : u === WATER_UNITS.floz ? 'fluid ounces' : 'cups'),
+        '<input name="amount" type="text" inputmode="decimal" autocomplete="off" ' + (cur ? '' : 'placeholder="' + u.quick[4] + '"') + ' value="' +
+        (cur ? Math.round(cur.ml / u.ml * 100) / 100 : '') + '" required>'),
+    extraLabel: cur ? 'Delete' : null,
+    onExtra: function () { removeFrom('water', cur); commit(); },
+    onSubmit: function (v) {
+      var amount = Number(String(v.amount).replace(',', '.'));
+      if (!(amount > 0) || amount * u.ml > 10000) { toast('Enter how much you drank'); return false; }
+      if (cur) { cur.ml = Math.round(amount * u.ml); commit(); }
+      else { closeSheet(); addWater(amount); return false; }
+    }
+  });
+}
 
 /* About you: birthday, height and sex, used only for the calorie estimate in reports. */
 function getSetting(name) { var s = state.settings.find(function (x) { return x.name === name; }); return s ? s.value : ''; }
@@ -389,7 +431,7 @@ function isEmpty(s) {
 }
 function daysWithEntries(s) {
   var set = {};
-  ['moods', 'sleeps', 'weights', 'meals', 'activities', 'notes', 'customValues', 'steps'].forEach(function (k) {
+  ['moods', 'sleeps', 'weights', 'meals', 'activities', 'notes', 'customValues', 'steps', 'water'].forEach(function (k) {
     s[k].forEach(function (e) { set[e.localDate] = 1; });
   });
   return Object.keys(set).length;
@@ -735,6 +777,14 @@ function viewToday() {
       (st ? st.count.toLocaleString('en-US') : 'Add') + '</div></button>';
   }
 
+  if (isOn(KEYS.WATER)) {
+    var drinks = waterOn(d);
+    html += '<section class="card"><div class="spread"><h2 class="label">Water</h2><div class="cap">' + (drinks.length ? fmtWater(waterTotal(d)) + ' today' : 'Each drink by amount') + '</div></div>' +
+      '<div class="chips mt8">' + drinks.map(function (w) {
+        return '<button class="chip" data-act="editWater" data-id="' + w.id + '">' + fmtWater(w.ml) + ' · ' + esc(timeOf(w.recordedAt, w.zoneOffset)) + '</button>';
+      }).join('') + '<button class="seg" data-act="openWater" aria-pressed="false">+ Add</button></div></section>';
+  }
+
   if (isOn(KEYS.FOOD)) {
     html += '<section class="card"><div class="spread"><h2 class="label">Food</h2><span class="cap">' +
       (meals.length ? plural(meals.length, 'meal', 'meals') : 'Nothing logged yet') + '</span></div><div class="mt4">' +
@@ -921,7 +971,12 @@ function figures(start, end) {
     meals: state.meals.filter(inRange).length,
     activeDays: Object.keys(activeDays).length,
     activityMinutes: acts.reduce(function (a, e) { return a + e.durationMinutes; }, 0),
-    stepsAvg: (function () { var xs = state.steps.filter(inRange).map(function (e) { return e.count; }); return xs.length ? average(xs) : null; })()
+    stepsAvg: (function () { var xs = state.steps.filter(inRange).map(function (e) { return e.count; }); return xs.length ? average(xs) : null; })(),
+    waterAvg: (function () {
+      var days = {}; state.water.filter(inRange).forEach(function (w) { days[w.localDate] = (days[w.localDate] || 0) + w.ml; });
+      var xs = Object.keys(days).map(function (k) { return days[k]; });
+      return xs.length ? average(xs) : null;
+    })()
   };
 }
 /* change is in kilograms; it is rounded in the unit shown. */
@@ -946,6 +1001,7 @@ function figureRows(period, f) {
   if (isOn(KEYS.ACTIVITY)) {
     rows.push(isDay ? ['Activity', fmtMinutes(f.activityMinutes)] : ['Active days', f.activeDays + ', ' + fmtMinutes(f.activityMinutes) + ' in total']);
   }
+  if (isOn(KEYS.WATER)) rows.push([isDay ? 'Water' : 'Average water', f.waterAvg == null ? 'No entries' : fmtWater(f.waterAvg) + (isDay ? '' : ' a day (on days with drinks logged)')]);
   if (isOn(KEYS.STEPS)) rows.push([isDay ? 'Steps' : 'Average steps', f.stepsAvg == null ? 'No entries' : Math.round(f.stepsAvg).toLocaleString('en-US') + (isDay ? '' : ' a day')]);
   return rows;
 }
@@ -1035,7 +1091,7 @@ function claudeCard(period, start, end) {
     h += '<p class="cap mt10">Written by Claude ' + esc(agoLabel(Date.parse(s.at))) + '.</p>';
   }
   else if (!asking) h += '<p class="mt8">Ask Claude to read this ' + period + '\'s entries' + (periodPhotoNames(start, end).length ? ' and meal photos' : '') + ' and write what stood out and what is worth trying.</p>';
-  if (asking) h += '<p class="mt10 cap">Claude is writing… this takes about half a minute.</p>';
+  if (asking) h += '<p class="mt10 cap">Claude is writing… this can take up to two minutes. You can close the app meanwhile; the summary will be here when you come back.</p>';
   if (err) h += '<p class="cap mt10" style="color:var(--warn)">' + esc(err) + '</p>';
   h += '<button class="btn' + (s && s.text ? '' : ' primary') + ' block mt12" data-act="askClaude"' + (asking ? ' disabled' : '') + '>' +
     (asking ? 'Writing…' : s && s.text ? 'Ask again with the latest entries' : 'Ask Claude') + '</button>';
@@ -1097,15 +1153,16 @@ var Estimates = (function () {
     put: put,
     load: function (start, end) {
       var k = start + ':' + end;
-      if (checked[k] || !Cloud.signedIn()) return;
+      if (checked[k] || !Cloud.signedIn()) return Promise.resolve();
       checked[k] = true;
-      Cloud.call('/rest/v1/daily_estimates?select=day,eaten_kcal,burned_kcal,protein_g,carbs_g,fat_g&day=gte.' + start + '&day=lte.' + end)
+      return Cloud.call('/rest/v1/daily_estimates?select=day,eaten_kcal,burned_kcal,protein_g,carbs_g,fat_g&day=gte.' + start + '&day=lte.' + end)
         .then(function (r) { return r.json(); }).then(function (rows) {
           if (!Array.isArray(rows)) return;
           var before = JSON.stringify(cache); put(rows);
           if (JSON.stringify(cache) !== before) render();
         }).catch(function () { checked[k] = false; });
     },
+    refresh: function (start, end) { delete checked[start + ':' + end]; return this.load(start, end); },
     forget: function () { cache = {}; checked = {}; keep(); }
   };
 })();
@@ -1393,18 +1450,51 @@ function markdown(text) {
 
 var Claude = (function () {
   var cache = lsGet('ld.summaries', {}), asking = {}, errors = {}, checked = {};
+  // Summaries are written by the server in the background; jobs still running are kept here so
+  // the app can pick them up again after being closed.
+  var jobs = lsGet('ld.jobs', {}), waiting = {};
   function key(period, start) { return period + ':' + start; }
   function keep() { lsSet('ld.summaries', cache); }
-  function load(period, start) {
+  function keepJobs() { lsSet('ld.jobs', jobs); }
+  function load(period, start, force) {
     var k = key(period, start);
-    if (checked[k] || !Cloud.signedIn()) return;
+    if ((checked[k] && !force) || !Cloud.signedIn()) return Promise.resolve();
     checked[k] = true;
-    Cloud.call('/rest/v1/summaries?select=text,created_at&period=eq.' + period + '&start_date=eq.' + start + '&order=created_at.desc&limit=1')
+    return Cloud.call('/rest/v1/summaries?select=text,created_at&period=eq.' + period + '&start_date=eq.' + start + '&order=created_at.desc&limit=1')
       .then(function (r) { return r.json(); }).then(function (rows) {
         if (Array.isArray(rows) && rows[0] && (!cache[k] || Date.parse(rows[0].created_at) > Date.parse(cache[k].at))) {
           cache[k] = { text: rows[0].text, at: rows[0].created_at }; keep(); render();
         }
       }).catch(function () { checked[k] = false; });
+  }
+  /* Checks on a job every few seconds until the summary is ready, fails, or takes far too long. */
+  function waitFor(k) {
+    if (waiting[k]) return waiting[k];
+    var job = jobs[k];
+    asking[k] = true; errors[k] = ''; render();
+    waiting[k] = new Promise(function (resolve) {
+      function done(ok, err) {
+        delete jobs[k]; keepJobs(); delete waiting[k];
+        asking[k] = false; errors[k] = err || ''; render(); resolve(ok);
+      }
+      function check() {
+        if (!Cloud.signedIn()) return done(false, 'You are signed out. Sign in again under Trackers.');
+        Cloud.call('/rest/v1/summary_jobs?select=status,error&id=eq.' + job.id).then(function (r) { return r.json(); }).then(function (rows) {
+          var j = rows && rows[0];
+          if (j && j.status === 'done') {
+            return Promise.all([load(job.period, job.start, true), Estimates.refresh(job.start, job.end)]).then(function () { done(true); });
+          }
+          if (j && j.status === 'failed') return done(false, j.error || 'Claude could not write the summary. Try again.');
+          if (Date.now() - job.at > 4 * 60000) return done(false, 'The summary did not finish. Tap Ask again.');
+          setTimeout(check, 5000);
+        }, function () {
+          if (Date.now() - job.at > 15 * 60000) return done(false, 'No connection. Try again when you are online.');
+          setTimeout(check, 8000);
+        });
+      }
+      setTimeout(check, 4000);
+    });
+    return waiting[k];
   }
   function ask(period, start, end) {
     var k = key(period, start);
@@ -1426,15 +1516,21 @@ var Claude = (function () {
         body: JSON.stringify({ period: period, start: start, end: end, report: report, photos: photos })
       });
     }).then(function (r) { return r.json(); }).then(function (j) {
-      cache[k] = { text: j.text, at: j.created_at || new Date().toISOString() }; keep();
-      if (j.days) Estimates.put(j.days);
-      return true;
+      if (j.text) {   // an older server answered with the summary itself
+        cache[k] = { text: j.text, at: j.created_at || new Date().toISOString() }; keep();
+        if (j.days) Estimates.put(j.days);
+        asking[k] = false; render(); return true;
+      }
+      jobs[k] = { id: j.job, at: Date.now(), period: period, start: start, end: end }; keepJobs();
+      asking[k] = false;
+      return waitFor(k);
     }, function (e) {
       errors[k] = e.auth ? 'You are signed out. Sign in again under Trackers.'
         : e.message === 'Failed to fetch' || e.name === 'TypeError' ? 'No connection. Try again when you are online.'
         : e.message || 'Something went wrong. Try again.';
+      asking[k] = false; render();
       return false;
-    }).then(function (ok) { asking[k] = false; render(); return ok; });
+    });
   }
   return {
     available: function () { return !PREVIEW && Cloud.approved() && isOn(KEYS.AI); },
@@ -1443,7 +1539,15 @@ var Claude = (function () {
     error: function (period, start) { return errors[key(period, start)] || ''; },
     ask: ask,
     has: function (period, start) { return !!cache[key(period, start)]; },
-    forget: function () { cache = {}; asking = {}; errors = {}; checked = {}; keep(); }
+    /* After the app was closed while Claude was writing: keep watching those jobs. */
+    resume: function () {
+      if (!Cloud.signedIn()) return;
+      Object.keys(jobs).forEach(function (k) {
+        if (Date.now() - jobs[k].at > 30 * 60000) { delete jobs[k]; keepJobs(); }
+        else waitFor(k);
+      });
+    },
+    forget: function () { cache = {}; asking = {}; errors = {}; checked = {}; jobs = {}; keepJobs(); keep(); }
   };
 })();
 
@@ -1462,10 +1566,24 @@ function buildReport(attached) {
   var L = [];
   L.push('# Life Diary report: ' + rangeLabel(start, end) + ' ' + year + ' (' + ui.period + ')', '');
   L.push('## Instructions for Claude', '');
-  L.push('This is an export from my personal diary app. Please write a summary of this period for me.', '');
-  L.push('- Start with a section called "What stood out": three to five sentences in plain, friendly language about patterns in the data, for example how sleep, mood, food, activity and weight moved together.');
-  L.push('- Then a section called "Worth trying": one to three small, concrete suggestions that follow from those patterns.');
-  L.push('- Use only the figures and entries below. Do not invent numbers. If there is too little data to see a pattern, say so plainly.');
+  var per = ui.period, words = per === 'day' ? 220 : per === 'week' ? 420 : 520;
+  L.push('This is an export from my personal diary app. I already see my entries and the figures in the app, so do not repeat them back to me. ' +
+    'What I want from you is analysis: what connects to what, what changed and why it might have, and what I could try.', '');
+  L.push('- Start with a section called "In short": two or three sentences with the main takeaway of this ' + per + '.');
+  if (per === 'day') {
+    L.push('- Then a section called "How the day went": three to six sentences comparing this day with my usual days (see "The last 14 days" below). ' +
+      'Say what was different and what may explain it, for example last night\'s sleep, activity and steps, meals and their timing, water, or sweets.');
+  } else {
+    L.push('- Then a section called "Patterns": three to six bullet points. Each one links two or more things and is backed by numbers from the "Day by day" table, ' +
+      'for example: "On the 3 nights under 7 hours, next-day mood averaged 2.7, against 4.0 after longer nights." Look in particular at: sleep and the next day\'s mood; ' +
+      'activity and steps and that night\'s sleep and the next day\'s mood; late or heavy dinners (see "Last meal") and sleep; sweets, caffeine or alcohol, where they appear in meals or my own trackers, and sleep or mood; water; weekdays against weekends. ' +
+      'Say how many days each point rests on, and mark weak or possibly coincidental patterns as such. Where the data shows no link, say so briefly instead of stretching. ' +
+      'If gaps in my logging limit the analysis, say which in one line at the end.');
+    L.push('- Then a section called "Changes": two to four bullet points on what improved or slipped compared with the ' + (per === 'week' ? 'weeks' : 'months') + ' before (see "Recent ' + per + 's" below), with the numbers.');
+  }
+  L.push('- Then a section called "Worth trying": one to three small experiments for the next ' + (per === 'month' ? 'weeks' : per === 'week' ? 'week' : 'days') + ', each tied to something above, and what to log to see whether it worked.');
+  L.push('- Keep the sections up to "Worth trying" under about ' + words + ' words together. Plain, friendly language.');
+  L.push('- Use only the data below. Do not invent numbers. With few days of data, call patterns tentative.');
   L.push('- Do not diagnose or give medical advice. If something looks worth raising with a doctor, say that in one sentence.');
   if (attached.length) L.push('- Photos of some meals are attached; each meal below names its photo file. Use them to see what was eaten where the text says little.');
   if (isOn(KEYS.FOOD) && isOn(KEYS.MOOD)) {
@@ -1491,7 +1609,7 @@ function buildReport(attached) {
     L.push('- Do not estimate calories burned, because my ' + [prof.age == null ? 'age' : '', !prof.cm ? 'height' : '', !prof.weight ? 'weight' : ''].filter(Boolean).join(' and ') +
       ' is missing. Mention once, in one sentence, that adding ' + (!prof.weight && (prof.age == null || !prof.cm) ? 'them under Trackers → About you and logging a weight' : !prof.weight ? 'a weight entry' : 'them under Trackers → About you') + ' would allow a calorie-balance estimate.');
   }
-  L.push('- Keep "What stood out" and "Worth trying" under about 200 words together' + (isOn(KEYS.FOOD) ? '; the nutrition estimate comes on top of that' : '') + '. I may ask follow-up questions afterwards.', '');
+  L.push('');
   L.push('Mood is recorded on a scale from 1 (low) to 5 (great). Sleep is the time slept the night before each date. Weeks run Sunday to Saturday.', '');
 
   if (isOn(KEYS.FOOD) && prof.complete) {
@@ -1500,6 +1618,8 @@ function buildReport(attached) {
       (prof.sex ? ', sex: ' + prof.sex : ', sex not given'));
     L.push('- Resting energy (Mifflin-St Jeor formula' + (prof.sex ? '' : ', midway between the male and female versions') + '): about ' + prof.rest + ' kcal a day', '');
   }
+  dayTable(start, end).forEach(function (l) { L.push(l); });
+  recentContext(ui.period, start).forEach(function (l) { L.push(l); });
   L.push('## Figures calculated by the app', '');
   figureRows(ui.period, f).forEach(function (r) { L.push('- ' + r[0] + ': ' + r[1]); });
   var prevRows = figureRows(ui.period, prev);
@@ -1517,12 +1637,66 @@ function buildReport(attached) {
   }
   return L.join('\n');
 }
+/* One row per day with the numbers Claude needs for finding links between things. */
+function dayTable(start, end) {
+  var cols = [['Day', function (iso) { return weekdayName(iso).slice(0, 3) + ' ' + dayMonth(iso); }]];
+  var on = function (iso) { return function (e) { return e.localDate === iso; }; };
+  if (isOn(KEYS.SLEEP)) cols.push(['Sleep (h)', function (iso) { var x = state.sleeps.find(on(iso)); return x ? fmt1(x.durationMinutes / 60) : ''; }]);
+  if (isOn(KEYS.MOOD)) cols.push(['Mood (1-5)', function (iso) { var x = state.moods.find(on(iso)); return x ? String(x.level) : ''; }]);
+  if (isOn(KEYS.STEPS)) cols.push(['Steps', function (iso) { var x = state.steps.find(on(iso)); return x ? String(x.count) : ''; }]);
+  if (isOn(KEYS.ACTIVITY)) cols.push(['Active (min)', function (iso) { var m = state.activities.filter(on(iso)).reduce(function (a, e) { return a + e.durationMinutes; }, 0); return m ? String(m) : '0'; }]);
+  if (isOn(KEYS.FOOD)) {
+    cols.push(['Meals', function (iso) { return String(state.meals.filter(on(iso)).length); }]);
+    cols.push(['Last meal', function (iso) {
+      var ms = state.meals.filter(on(iso)).sort(function (a, b) { return a.eatenAt - b.eatenAt; });
+      return ms.length ? timeOf(ms[ms.length - 1].eatenAt, ms[ms.length - 1].zoneOffset) : '';
+    }]);
+  }
+  if (isOn(KEYS.WATER)) cols.push(['Water (L)', function (iso) { var t = waterTotal(iso); return t ? fmt1(t / 1000) : ''; }]);
+  if (isOn(KEYS.WEIGHT)) cols.push(['Weight (kg)', function (iso) { var x = sortedWeights().filter(on(iso)); return x.length ? fmt1(x[0].kg) : ''; }]);
+  state.customTrackers.filter(function (t) { return t.enabled && t.type !== 'text'; }).slice(0, 4).forEach(function (t) {
+    cols.push([t.name + (t.unit ? ' (' + t.unit + ')' : ''), function (iso) {
+      var v = state.customValues.find(function (x) { return x.trackerId === t.id && x.localDate === iso; });
+      return !v || v.numberValue == null ? '' : t.type === 'yes_no' ? (v.numberValue === 1 ? 'yes' : 'no') : fmtNumber(v.numberValue);
+    }]);
+  });
+  var out = ['## Day by day', '', 'Blank means nothing was logged. Sleep is the night before the date.', '',
+    '| ' + cols.map(function (c) { return c[0]; }).join(' | ') + ' |', '|' + cols.map(function () { return ' --- '; }).join('|') + '|'];
+  var last = end < todayIso() ? end : todayIso();   // days still to come stay out
+  for (var iso = start; iso <= last; iso = addDays(iso, 1)) out.push('| ' + cols.map(function (c) { return c[1](iso); }).join(' | ') + ' |');
+  out.push('');
+  return out;
+}
+/* What my usual looks like: the 14 days before a day, or the four weeks / three months before a period. */
+function recentContext(period, start) {
+  var out = [];
+  if (period === 'day') {
+    var from = addDays(start, -14), to = addDays(start, -1);
+    out.push('## The last 14 days, for context', '', rangeLabel(from, to) + ':', '');
+    figureRows('week', figures(from, to)).forEach(function (r) { out.push('- ' + r[0] + ': ' + r[1]); });
+    return out.concat(['']);
+  }
+  var rows = [], cur = start;
+  for (var i = 0; i < (period === 'week' ? 4 : 3); i++) {
+    var pe = addDays(cur, -1), ps = periodRange(period, pe)[0], f = figures(ps, pe);
+    rows.unshift('| ' + [rangeLabel(ps, pe), f.sleepAvg == null ? '' : fmt1(f.sleepAvg / 60), f.moodAvg == null ? '' : fmt1(f.moodAvg),
+      f.stepsAvg == null ? '' : String(Math.round(f.stepsAvg)), String(f.activeDays), f.waterAvg == null ? '' : fmt1(f.waterAvg / 1000),
+      f.weightChange == null ? '' : (f.weightChange > 0 ? '+' : '') + fmt1(f.weightChange)].join(' | ') + ' |');
+    cur = ps;
+  }
+  out.push('## Recent ' + period + 's', '', 'Averages per day with entries; weight change from first to last weigh-in.', '',
+    '| ' + (period === 'week' ? 'Week' : 'Month') + ' | Sleep (h) | Mood | Steps | Active days | Water (L) | Weight change (kg) |', '| --- | --- | --- | --- | --- | --- | --- |');
+  return out.concat(rows, ['']);
+}
 function reportDay(iso, attached) {
   var out = [], on = function (e) { return e.localDate === iso; };
   var mood = state.moods.find(on);
   if (mood && isOn(KEYS.MOOD)) out.push('- Mood: ' + MOODS[mood.level - 1] + ' (' + mood.level + '/5)');
   var sleep = state.sleeps.find(on);
   if (sleep && isOn(KEYS.SLEEP)) out.push('- Sleep: ' + fmtDuration(sleep.durationMinutes) + (sleep.source === 'garmin' ? ' (Garmin' + (sleep.score ? ', sleep score ' + sleep.score : '') + ')' : ''));
+  var drinks = waterOn(iso);
+  if (drinks.length && isOn(KEYS.WATER)) out.push('- Water: ' + fmtWater(waterTotal(iso), 'l') + ' in ' + drinks.length + ' drink' + (drinks.length > 1 ? 's' : '') +
+    ' (' + drinks.map(function (w) { return fmtWater(w.ml, 'l') + ' at ' + timeOf(w.recordedAt, w.zoneOffset); }).join(', ') + ')');
   var steps = state.steps.find(on);
   if (steps && isOn(KEYS.STEPS)) out.push('- Steps: ' + steps.count.toLocaleString('en-US') + (steps.source === 'garmin' ? ' (Garmin)' : ''));
   if (isOn(KEYS.WEIGHT)) sortedWeights().filter(on).forEach(function (w) { out.push('- Weight: ' + fmtKg(w.kg) + ' at ' + timeOf(w.measuredAt, w.zoneOffset)); });
@@ -1571,6 +1745,10 @@ function viewTrackers() {
   html += '<section class="card"><h2 class="label">Weight unit</h2><div class="row mt10" role="group" aria-label="Weight unit">' +
     seg('weightUnit', 'kg', 'Kilograms (kg)', weightUnit() === 'kg') + seg('weightUnit', 'lb', 'Pounds (lb)', weightUnit() === 'lb') +
     '</div><p class="cap mt8">Weights are kept exactly; this only changes how they are shown and entered.</p></section>';
+  if (isOn(KEYS.WATER)) {
+    html += '<section class="card"><h2 class="label">Water unit</h2><div class="row mt10" role="group" aria-label="Water unit">' +
+      Object.keys(WATER_UNITS).map(function (k) { return seg('waterUnit', k, WATER_UNITS[k].name.replace(/ \(.*\)/, ''), waterUnit() === k); }).join('') + '</div></section>';
+  }
 
   html += '<section class="card flush" aria-label="About you"><button class="item" data-act="editProfile"><span class="grow"><span class="title">About you</span><br><span class="sub">' +
     esc(profileLabel()) + '</span></span>' + ICON.chev + '</button></section>';
@@ -1604,7 +1782,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.10.</p>';
+    '. Version 0.11.</p>';
   return html + '</main>';
 }
 function accountCard() {
@@ -2694,6 +2872,10 @@ var actions = {
   },
   openSleep: function () { sleepSheet(); },
   openSteps: function () { stepsSheet(); },
+  openWater: function () { waterSheet(null); },
+  editWater: function (d) { waterSheet(Number(d.id)); },
+  waterQuick: function (d) { closeSheet(); addWater(Number(d.val)); },
+  waterUnit: function (d) { setSetting('unit.water', d.val); commit(); },
   garminSwitch: function () {
     if (isOn(KEYS.GARMIN)) {
       if (confirm('Turn off Garmin sync? Entries already brought in stay in your diary.')) Garmin.disconnect();
@@ -2869,7 +3051,7 @@ Store.init().then(function () {
   cleanupPhotos();
   render();
   Cloud.start();
-  setTimeout(function () { Garmin.maybe(); Weekly.check(); Push.checkZone(); }, 2500);
+  setTimeout(function () { Claude.resume(); Garmin.maybe(); Weekly.check(); Push.checkZone(); }, 2500);
   var opened = new URLSearchParams(location.search).get('open');
   if (opened) { history.replaceState(history.state, '', location.pathname); openFrom(opened); }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
@@ -2881,7 +3063,7 @@ document.addEventListener('visibilitychange', function () {
   if (ui.tab === 'today' && !sheet && lsGet('ld.lastSeenDay', '') !== todayIso()) { ui.date = todayIso(); ui.anchor = todayIso(); render(); }
   lsSet('ld.lastSeenDay', todayIso());
   Cloud.resumed();
-  setTimeout(function () { Garmin.maybe(); Weekly.check(); Push.checkZone(); }, 2500);
+  setTimeout(function () { Claude.resume(); Garmin.maybe(); Weekly.check(); Push.checkZone(); }, 2500);
 });
 lsSet('ld.lastSeenDay', todayIso());
 

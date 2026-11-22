@@ -174,3 +174,24 @@ select cron.schedule('life-diary-notifications', '*/15 * * * *', $$
                                   'x-tick-secret', (select value from public.app_secrets where name = 'tick_secret')),
     body := '{"action":"tick"}'::jsonb);
 $$);
+
+-- One row per "Ask Claude": the summary is written in the background, so the app can close
+-- while it runs and pick up the result later. People can read their own rows.
+create table public.summary_jobs (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  period text not null,
+  start_date date not null,
+  status text not null default 'working' check (status in ('working', 'done', 'failed')),
+  error text,
+  created_at timestamptz not null default now(),
+  finished_at timestamptz
+);
+create index summary_jobs_recent on public.summary_jobs (user_id, created_at desc);
+alter table public.summary_jobs enable row level security;
+revoke all on public.summary_jobs from anon;
+revoke all on public.summary_jobs from authenticated;
+grant select on public.summary_jobs to authenticated;
+grant all on public.summary_jobs to service_role;
+create policy "Own summary jobs: read" on public.summary_jobs
+  for select to authenticated using ((select auth.uid()) = user_id);

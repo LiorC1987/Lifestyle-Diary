@@ -2,14 +2,18 @@
 //
 // The app sends the period's report (the same Markdown as "Share report") and
 // the names of meal photos already saved in the person's account. This function
-// checks who is asking, fetches those photos with the person's own sign-in (so
-// the storage rules still apply), asks Claude, and keeps the answer in the
-// summaries table. The Claude key lives only here, as the ANTHROPIC_API_KEY secret.
+// checks who is asking, starts a job (summary_jobs) and answers straight away; the
+// summary is then written in the background, so the app may close meanwhile. The
+// background part fetches the photos with the person's own sign-in (so the storage
+// rules still apply), asks Claude, and keeps the answer in the summaries table.
+// The Claude key lives only here, as the ANTHROPIC_API_KEY secret.
 
 const MODEL = "claude-sonnet-5-5";
 const MAX_PER_DAY = 10;          // summaries per person in 24 hours
 const MAX_PHOTOS = 20;
-const MAX_REPORT_CHARS = 120000;
+const MAX_REPORT_CHARS = 160000;
+const MAX_TOKENS = 16000;        // thinking and the summary together
+const EFFORT = "medium";         // keeps a week's summary well inside the server's time limit
 
 const URL_BASE = Deno.env.get("SUPABASE_URL")!;
 function namedKey(jsonVar: string, legacyVar: string): string {
@@ -38,6 +42,7 @@ const SYSTEM = [
   "The reader cannot reply to you here, so do not ask questions or offer to do more.",
   "Write in the language most of the diary entries are written in; if that is unclear, write in English.",
   "Format: Markdown with '## ' section headings, short paragraphs and '- ' bullet points. Simple Markdown tables are allowed where the report asks for them. No other headings.",
+  "Write the sections in the order the report asks for them, and finish every section; keep the analysis sections within their word limits rather than cutting later sections short.",
 ].join("\n");
 
 // Asked for on top of the summary; the app hides this block and keeps the numbers per day.
@@ -57,7 +62,10 @@ function num(v: unknown): number | null {
 /* Takes the estimates block out of Claude's answer and reads the numbers in it. */
 function splitEstimates(text: string, start: string, end: string): { text: string; days: DayEstimate[] } {
   const m = text.match(/```\s*estimates\s*\n([\s\S]*?)```\s*$/i) || text.match(/```\s*estimates\s*\n([\s\S]*?)```/i);
-  if (!m) return { text, days: [] };
+  if (!m) {
+    const open = text.search(/```\s*estimates/i);   // cut off before the block ended
+    return { text: open >= 0 ? text.slice(0, open).trim() : text, days: [] };
+  }
   const rest = text.replace(m[0], "").trim();
   try {
     const j = JSON.parse(m[1]);
@@ -112,68 +120,84 @@ Deno.serve(async (req) => {
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
   if (!apiKey) return fail(503, "Claude summaries are not set up yet: the Claude key is missing.");
 
+  const adminHeaders: Record<string, string> = { apikey: SECRET, "Content-Type": "application/json" };
+  if (!SECRET.startsWith("sb_")) adminHeaders.Authorization = "Bearer " + SECRET;   // legacy service_role key
+
   // A daily limit, so a stuck button cannot use up the credit.
   const since = new Date(Date.now() - 86400000).toISOString();
-  const recent = await fetch(URL_BASE + "/rest/v1/summaries?select=id&created_at=gte." + encodeURIComponent(since), { headers: asUser });
+  const recent = await fetch(URL_BASE + "/rest/v1/summary_jobs?select=id&user_id=eq." + uid + "&created_at=gte." + encodeURIComponent(since), { headers: adminHeaders });
   if (recent.ok && (await recent.json()).length >= MAX_PER_DAY) {
     return fail(429, "That is " + MAX_PER_DAY + " summaries in the last day, the most allowed. Try again tomorrow.");
   }
-
-  // Meal photos, fetched with the person's own sign-in.
-  const content: unknown[] = [];
-  for (const name of photos) {
-    const r = await fetch(URL_BASE + "/storage/v1/object/authenticated/photos/" + encodeURIComponent(uid) + "/" + encodeURIComponent(name), { headers: asUser });
-    if (!r.ok) continue;
-    const bytes = new Uint8Array(await r.arrayBuffer());
-    if (bytes.length > 4_000_000) continue;
-    content.push({ type: "text", text: "Photo file: " + name });
-    content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: toBase64(bytes) } });
-  }
-  content.push({ type: "text", text: report });
-
-  const claude = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: 6000, system: SYSTEM + ESTIMATES, messages: [{ role: "user", content }] }),
+  const started = await fetch(URL_BASE + "/rest/v1/summary_jobs", {
+    method: "POST", headers: { ...adminHeaders, Prefer: "return=representation" },
+    body: JSON.stringify({ user_id: uid, period, start_date: start }),
   });
-  const answer = await claude.json().catch(() => ({}));
-  if (!claude.ok) {
-    const msg = String(answer?.error?.message || "");
-    console.error("Claude API error", claude.status, msg);
-    if (claude.status === 401) return fail(502, "The Claude key was not accepted. Check the ANTHROPIC_API_KEY secret in Supabase.");
-    if (/credit balance/i.test(msg)) return fail(402, "The Claude credit has run out. Add credit in the Claude Console.");
-    if (claude.status === 429 || claude.status === 529) return fail(503, "Claude is busy right now. Try again in a minute.");
-    return fail(502, "Claude could not write the summary (" + claude.status + ").");
-  }
-  const raw = (answer.content || []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n").trim();
-  const { text, days } = splitEstimates(raw, start, end);
-  if (!text) return fail(502, "Claude sent back an empty summary. Try again.");
-  // Room for Claude's thinking plus the answer is generous, but say so if it still ran out.
-  const finalText = answer.stop_reason === "max_tokens" ? text + "\n\n*This summary was cut short. Tap Ask again for the full version.*" : text;
+  const job = started.ok ? (await started.json())[0] : null;
+  if (!job) { console.error("job", started.status, await started.text()); return fail(500, "The summary could not be started. Try again."); }
+  const finish = (status: "done" | "failed", error: string | null = null) => fetch(URL_BASE + "/rest/v1/summary_jobs?id=eq." + job.id, {
+    method: "PATCH", headers: { ...adminHeaders, Prefer: "return=minimal" }, body: JSON.stringify({ status, error, finished_at: new Date().toISOString() }),
+  });
 
-  // Keep it, so it shows again next time without asking Claude.
-  const row = {
-    user_id: uid, period, start_date: start, end_date: end, text: finalText, model: answer.model || MODEL,
-    input_tokens: answer.usage?.input_tokens ?? null, output_tokens: answer.usage?.output_tokens ?? null,
-  };
-  const saveHeaders: Record<string, string> = { apikey: SECRET, "Content-Type": "application/json", Prefer: "return=representation" };
-  if (!SECRET.startsWith("sb_")) saveHeaders.Authorization = "Bearer " + SECRET;   // legacy service_role key
-  const saved = await fetch(URL_BASE + "/rest/v1/summaries", { method: "POST", headers: saveHeaders, body: JSON.stringify(row) });
-  let createdAt = new Date().toISOString();
-  if (saved.ok) { const rows = await saved.json(); if (rows?.[0]?.created_at) createdAt = rows[0].created_at; }
-  else console.error("Could not save summary", saved.status, await saved.text());
+  // Everything below runs after the app has its answer, so closing the app does not stop it.
+  const work = async () => {
+    // Meal photos, fetched with the person's own sign-in.
+    const content: unknown[] = [];
+    for (const name of photos) {
+      const r = await fetch(URL_BASE + "/storage/v1/object/authenticated/photos/" + encodeURIComponent(uid) + "/" + encodeURIComponent(name), { headers: asUser });
+      if (!r.ok) continue;
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      if (bytes.length > 4_000_000) continue;
+      content.push({ type: "text", text: "Photo file: " + name });
+      content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: toBase64(bytes) } });
+    }
+    content.push({ type: "text", text: report });
 
-  // The day-by-day numbers, for the calorie balance history.
-  if (days.length) {
-    const estimates = days.map((d) => ({
-      user_id: uid, day: d.date, eaten_kcal: d.eaten_kcal, burned_kcal: d.burned_kcal, protein_g: d.protein_g,
-      carbs_g: d.carbs_g, fat_g: d.fat_g, source_period: period, updated_at: new Date().toISOString(),
-    }));
-    const put = await fetch(URL_BASE + "/rest/v1/daily_estimates?on_conflict=user_id,day", {
-      method: "POST", headers: { ...saveHeaders, Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(estimates),
+    const claude = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model: MODEL, max_tokens: MAX_TOKENS, output_config: { effort: EFFORT }, system: SYSTEM + ESTIMATES, messages: [{ role: "user", content }] }),
     });
-    if (!put.ok) console.error("Could not save estimates", put.status, await put.text());
-  }
+    const answer = await claude.json().catch(() => ({}));
+    if (!claude.ok) {
+      const msg = String(answer?.error?.message || "");
+      console.error("Claude API error", claude.status, msg);
+      return finish("failed", claude.status === 401 ? "The Claude key was not accepted. Check the ANTHROPIC_API_KEY secret in Supabase."
+        : /credit balance/i.test(msg) ? "The Claude credit has run out. Add credit in the Claude Console."
+        : claude.status === 429 || claude.status === 529 ? "Claude was busy. Try again in a minute."
+        : "Claude could not write the summary (" + claude.status + ").");
+    }
+    const raw = (answer.content || []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n").trim();
+    const { text, days } = splitEstimates(raw, start, end);
+    if (!text) return finish("failed", "Claude sent back an empty summary. Try again.");
+    const finalText = answer.stop_reason === "max_tokens" ? text + "\n\n*This summary was cut short. Tap Ask again for the full version.*" : text;
+    console.log("summary", period, "tokens in/out", answer.usage?.input_tokens, answer.usage?.output_tokens, "stop", answer.stop_reason);
 
-  return reply(200, { text: finalText, created_at: createdAt, period, start, days });
+    // Keep it, so it shows again next time without asking Claude.
+    const row = {
+      user_id: uid, period, start_date: start, end_date: end, text: finalText, model: answer.model || MODEL,
+      input_tokens: answer.usage?.input_tokens ?? null, output_tokens: answer.usage?.output_tokens ?? null,
+    };
+    const saved = await fetch(URL_BASE + "/rest/v1/summaries", { method: "POST", headers: { ...adminHeaders, Prefer: "return=minimal" }, body: JSON.stringify(row) });
+    if (!saved.ok) { console.error("Could not save summary", saved.status, await saved.text()); return finish("failed", "The summary could not be saved. Try again."); }
+
+    // The day-by-day numbers, for the calorie balance history.
+    if (days.length) {
+      const estimates = days.map((d) => ({
+        user_id: uid, day: d.date, eaten_kcal: d.eaten_kcal, burned_kcal: d.burned_kcal, protein_g: d.protein_g,
+        carbs_g: d.carbs_g, fat_g: d.fat_g, source_period: period, updated_at: new Date().toISOString(),
+      }));
+      const put = await fetch(URL_BASE + "/rest/v1/daily_estimates?on_conflict=user_id,day", {
+        method: "POST", headers: { ...adminHeaders, Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(estimates),
+      });
+      if (!put.ok) console.error("Could not save estimates", put.status, await put.text());
+    }
+    return finish("done");
+  };
+  const running = work().catch((e) => { console.error("summary failed", String(e)); return finish("failed", "Something went wrong while writing the summary. Try again."); });
+  // deno-lint-ignore no-explicit-any
+  const rt = (globalThis as any).EdgeRuntime;
+  if (rt && typeof rt.waitUntil === "function") rt.waitUntil(running); else await running;
+
+  return reply(202, { job: job.id, period, start });
 });
