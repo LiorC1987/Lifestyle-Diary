@@ -1602,6 +1602,11 @@ function buildReport(attached) {
         ? ' First a small table with one row per food or drink (split a meal into its items where you can tell them apart), with columns: item, kcal, protein (g), carbohydrates (g), fat (g); end the table with a row for the day\'s total. Then a short list for the day\'s total: ' + split + '.'
         : ' Give averages only, per day with meals logged, as a short list: calories (kcal), protein (g), ' + split + '. Say how many days had meals logged, and mention days that look clearly higher or lower than the rest.') +
       ' Name meals you could not judge, for example where the portion size is missing. End the section with this sentence: "' + NUTRITION_NOTE + '" If no meals are logged, leave the section out.');
+    L.push('- Then a section called "Processed food": how processed my food was, using the NOVA groups (unprocessed or minimally processed; processed, such as cheese, bread or tinned fish; ultra-processed, such as packaged snacks, sweets, sweet drinks, instant noodles, sausages and most ready meals).' +
+      (ui.period === 'day'
+        ? ' Say which items fall in each group, and roughly what share of the day\'s calories came from ultra-processed food.'
+        : ' Give roughly what share of calories came from ultra-processed food on an average day with meals logged, name the main ultra-processed items, and which days were heavier on it.') +
+      ' Add one practical, specific swap for the most frequent ultra-processed item. Keep it to three to five bullet points. Where a meal\'s description is too vague to judge, say so rather than guessing. If no meals are logged, leave the section out.');
   }
   var prof = profileOf(end);
   if (isOn(KEYS.FOOD) && prof.complete) {
@@ -1797,7 +1802,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.12.</p>';
+    '. Version 0.13.</p>';
   return html + '</main>';
 }
 function accountCard() {
@@ -2098,7 +2103,7 @@ document.addEventListener('change', function (e) {
     if (sheet && document.getElementById('meal-photo')) { sheet.photoNew = url; paintMealPhoto(); }
   }, function () { toast('That file could not be read as a picture'); });
 });
-var ACTIVITY_TYPES = ['Walk', 'Run', 'Cycling', 'Swimming', 'Gym', 'Ab work', 'Leg work', 'Yoga', 'Pilates', 'Stretching', 'Hiking', 'Dancing', 'Trampoline', 'Sports', 'Housework', 'Gardening'];
+var ACTIVITY_TYPES = ['Walk', 'Run', 'Cycling', 'Swimming', 'Gym', 'Ab work', 'Leg work', 'Yoga', 'Pilates', 'Sculpt Academy', 'Stretching', 'Hiking', 'Dancing', 'Trampoline', 'Sports', 'Housework', 'Gardening'];
 var DURATIONS = [[15, '15 min'], [30, '30 min'], [60, '1 h'], [90, '1 h 30 min'], [120, '2 h']];
 var OTHER = '__other';
 
