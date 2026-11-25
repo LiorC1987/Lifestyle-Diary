@@ -1808,7 +1808,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.13.1.</p>';
+    '. Version 0.13.2.</p>';
   return html + '</main>';
 }
 function accountCard() {
@@ -2641,7 +2641,7 @@ var Cloud = (function () {
   var BASE = String(CFG.supabaseUrl || '').trim().replace(/\/+$/, '');
   var KEY = String(CFG.supabaseKey || '').trim();
   // access: '' until the first check, then 'approved', 'pending' or 'rejected' (set by the admin).
-  var blank = { userId: '', email: '', remoteModifiedAt: 0, dirty: false, conflict: false, lastSyncAt: 0, access: '', admin: false, waiting: 0 };
+  var blank = { userId: '', email: '', remoteModifiedAt: 0, sentAt: 0, dirty: false, conflict: false, lastSyncAt: 0, access: '', admin: false, waiting: 0 };
   var meta = Object.assign({}, blank, lsGet('ld.cloud', {}));
   var session = lsGet('ld.session', null);   // { access, refresh, expiresAt, userId, email }
   var busy = false, again = false, lastError = '', authErr = '', timer = null, manual = false, deferred = false, refreshing = null;
@@ -2718,6 +2718,9 @@ var Cloud = (function () {
   }
   function pushLocal() {
     var sentAt = state.modifiedAt || (state.modifiedAt = Date.now());
+    // Remember what is being sent before sending: if the reply is lost (app closed or
+    // reloaded, connection dropped), the next sync still recognises this copy as our own.
+    meta.sentAt = sentAt; saveMeta();
     return api('/rest/v1/diaries?on_conflict=user_id', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -2725,11 +2728,12 @@ var Cloud = (function () {
     }).then(function () {
       meta.remoteModifiedAt = sentAt;
       if (state.modifiedAt === sentAt) meta.dirty = false;
+      saveMeta();
     });
   }
   function adopt(remote) {
     replaceState(remote);
-    meta.remoteModifiedAt = remote.modifiedAt; meta.dirty = false;
+    meta.remoteModifiedAt = remote.modifiedAt; meta.dirty = false; saveMeta();
   }
 
   function listPhotos() {
@@ -2801,6 +2805,12 @@ var Cloud = (function () {
       if (!remote) return pushLocal();
       // This device has no diary yet (new phone, cleared browser): take the account's.
       if (isEmpty(state) && !isEmpty(remote) && !meta.dirty) { adopt(remote); return null; }
+      // The account's copy is one this device sent itself, even if the reply never arrived.
+      if (remote.modifiedAt === meta.sentAt && remote.modifiedAt !== meta.remoteModifiedAt) {
+        meta.remoteModifiedAt = remote.modifiedAt;
+        if (state.modifiedAt === remote.modifiedAt) meta.dirty = false;
+        saveMeta();
+      }
       if (remote.modifiedAt === meta.remoteModifiedAt) return meta.dirty ? pushLocal() : null;
       // The account's copy changed since this device last saw it.
       if (isEmpty(remote) && !isEmpty(state)) return pushLocal();
@@ -3161,7 +3171,7 @@ if (!PREVIEW && 'serviceWorker' in navigator && (location.protocol === 'https:' 
   var hadController = !!navigator.serviceWorker.controller, reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', function () {
     if (!hadController || reloading) return;
-    var reload = function () { if (!sheet) { reloading = true; Store.flush().then(function () { location.reload(); }); } else setTimeout(reload, 2000); };
+    var reload = function () { if (!sheet && !Cloud.busy()) { reloading = true; Store.flush().then(function () { location.reload(); }); } else setTimeout(reload, 2000); };
     reload();
   });
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
