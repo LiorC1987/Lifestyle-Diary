@@ -252,11 +252,13 @@ function fmtWater(ml, unit) {
 }
 function waterOn(iso) { return state.water.filter(function (w) { return w.localDate === iso; }).sort(function (a, b) { return a.recordedAt - b.recordedAt; }); }
 function waterTotal(iso) { return waterOn(iso).reduce(function (a, w) { return a + w.ml; }, 0); }
-function addWater(amount) {
+/* hhmm is the time typed in the sheet; without one, now (or the same clock time on an earlier day). */
+function addWater(amount, hhmm) {
   var ml = Math.round(amount * WATER_UNITS[waterUnit()].ml);
-  var d = ui.date, now = new Date(), when = parseIso(d);
-  when.setHours(now.getHours(), now.getMinutes(), 0, 0);   // logged later for an earlier day: today's time on that day
-  state.water.push({ id: nextId(state.water), localDate: d, ml: ml, recordedAt: d === todayIso() ? Date.now() : when.getTime(), zoneOffset: currentOffset() });
+  var d = ui.date, offset = currentOffset(), now = new Date(), when = parseIso(d);
+  when.setHours(now.getHours(), now.getMinutes(), 0, 0);
+  var at = /^\d{1,2}:\d{2}$/.test(hhmm || '') && hhmm !== nowHHMM() ? toEpoch(d, hhmm, offset) : d === todayIso() ? Date.now() : when.getTime();
+  state.water.push({ id: nextId(state.water), localDate: d, ml: ml, recordedAt: at, zoneOffset: offset });
   commit();
   toast('Added ' + fmtWater(ml) + ' · ' + fmtWater(waterTotal(d)) + ' today');
 }
@@ -266,7 +268,9 @@ function waterSheet(id) {
     title: cur ? 'Edit drink' : 'Add water',
     body: (cur ? '' : '<div class="chips" role="group" aria-label="Common sizes">' + u.quick.map(function (q) {
         return '<button type="button" class="chip" data-act="waterQuick" data-val="' + q + '">' + q + ' ' + u.label + '</button>';
-      }).join('') + '</div><p class="cap mt8">Tap a size to add it, or type the amount.</p>') +
+      }).join('') + '<button type="button" class="chip" data-act="waterOther">Other</button></div>' +
+      '<p class="cap mt8">Tap a size to add it, or Other to type the amount. Change the time first for a drink you had earlier.</p>') +
+      field('Time', '<input name="time" type="time" required value="' + (cur ? timeOf(cur.recordedAt, cur.zoneOffset) : nowHHMM()) + '">') +
       field('Amount in ' + (u === WATER_UNITS.l ? 'liters' : u === WATER_UNITS.floz ? 'fluid ounces' : 'cups'),
         '<input name="amount" type="text" inputmode="decimal" autocomplete="off" ' + (cur ? '' : 'placeholder="' + u.quick[4] + '"') + ' value="' +
         (cur ? Math.round(cur.ml / u.ml * 100) / 100 : '') + '" required>'),
@@ -275,8 +279,8 @@ function waterSheet(id) {
     onSubmit: function (v) {
       var amount = Number(String(v.amount).replace(',', '.'));
       if (!(amount > 0) || amount * u.ml > 10000) { toast('Enter how much you drank'); return false; }
-      if (cur) { cur.ml = Math.round(amount * u.ml); commit(); }
-      else { closeSheet(); addWater(amount); return false; }
+      if (cur) { cur.ml = Math.round(amount * u.ml); if (v.time && v.time !== timeOf(cur.recordedAt, cur.zoneOffset)) cur.recordedAt = toEpoch(cur.localDate, v.time, cur.zoneOffset); commit(); }
+      else { closeSheet(); addWater(amount, v.time); return false; }
     }
   });
 }
@@ -1808,7 +1812,7 @@ function viewTrackers() {
     '</section>';
 
   html += '<p class="cap">Your diary is stored on this device' + (Cloud.signedIn() ? ' and in your online account' : '') +
-    '. Version 0.13.2.</p>';
+    '. Version 0.13.3.</p>';
   return html + '</main>';
 }
 function accountCard() {
@@ -2972,7 +2976,11 @@ var actions = {
   openSteps: function () { stepsSheet(); },
   openWater: function () { waterSheet(null); },
   editWater: function (d) { waterSheet(Number(d.id)); },
-  waterQuick: function (d) { closeSheet(); addWater(Number(d.val)); },
+  waterOther: function () { var f = document.querySelector('.sheet input[name=amount]'); if (f) { f.focus(); f.scrollIntoView({ block: 'center' }); } },
+  waterQuick: function (d) {
+    var t = document.querySelector('.sheet input[name=time]'), hhmm = t ? t.value : '';
+    closeSheet(); addWater(Number(d.val), hhmm);
+  },
   waterUnit: function (d) { setSetting('unit.water', d.val); commit(); },
   garminSwitch: function () {
     if (isOn(KEYS.GARMIN)) {
